@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="header">
+    <div class="header-title">
+        <h1>Configurações do Sistema</h1>
+        <p>Personalize e configure o SINAPSE para sua operação</p>
+    </div>
+    <div class="header-actions">
+        <button class="btn btn-success" id="save-settings-btn"><i class="fas fa-save"></i> Salvar Configurações</button>
+    </div>
+</header>
+
+<div class="settings-nav">
+    {% for tab in ['general', 'monitoring', 'notifications', 'system'] %}
+    <button class="settings-tab {{ 'active' if current_settings_tab == tab }}" data-tab="{{ tab }}">
+        <i class="fas {{ 'fa-cog' if tab == 'general' else ('fa-eye' if tab == 'monitoring' else ('fa-bell' if tab == 'notifications' else 'fa-server')) }}"></i>
+        {{ {'general': 'Geral', 'monitoring': 'Monitoramento', 'notifications': 'Notificações', 'system': 'Sistema'}[tab] }}
+    </button>
+    {% endfor %}
+</div>
+
+<div class="settings-section {{ 'active' if current_settings_tab == 'general' }}" id="settings-general">
+    <div class="card">
+        <h3 style="margin-bottom:1.5rem;">Configurações Gerais</h3>
+        <div class="form-group"><label class="form-label">Nome do Nó</label><input type="text" class="form-control" id="cfg-nodeName" value="{{ s.nodeName }}"></div>
+        <div class="form-group"><label class="form-label">Fuso Horário</label>
+            <select class="form-control" id="cfg-timezone">
+                <option {{ 'selected' if 'Fortaleza' in s.timezone }}>America/Fortaleza (UTC-3)</option>
+                <option {{ 'selected' if 'Paulo' in s.timezone }}>America/Sao_Paulo (UTC-3)</option>
+                <option {{ 'selected' if s.timezone == 'UTC' }}>UTC</option>
+            </select>
+        </div>
+        <div class="form-group"><label class="form-label">Idioma</label>
+            <select class="form-control" id="cfg-language">
+                <option {{ 'selected' if 'Brasil' in s.language }}>Português (Brasil)</option>
+                <option {{ 'selected' if s.language == 'English' }}>English</option>
+                <option {{ 'selected' if s.language == 'Español' }}>Español</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<div class="settings-section {{ 'active' if current_settings_tab == 'monitoring' }}" id="settings-monitoring">
+    <div class="card">
+        <h3 style="margin-bottom:1.5rem;">Configurações de Monitoramento</h3>
+        <div class="form-group"><label class="form-label">Intervalo de Polling (SNMP)</label>
+            <select class="form-control" id="cfg-pollingInterval">
+                {% for v in ['5 segundos', '1 minuto', '5 minutos', '10 minutos', '15 minutos'] %}
+                <option {{ 'selected' if s.pollingInterval == v }}>{{ v }}</option>
+                {% endfor %}
+            </select>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.35rem;">Controla o intervalo real de atualização do Dashboard, Dispositivos e Alertas. "5 segundos" é o padrão para o monitoramento simulado; intervalos maiores reduzem a carga sobre o hardware SNMP real.</div>
+        </div>
+        <div class="form-group"><label class="form-label">Retenção de Dados</label>
+            <select class="form-control" id="cfg-dataRetention">
+                {% for v in ['3 meses', '6 meses', '12 meses', '24 meses'] %}
+                <option {{ 'selected' if s.dataRetention == v }}>{{ v }}</option>
+                {% endfor %}
+            </select>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.35rem;">Exibida como política ativa na página Histórico.</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;">
+            <label class="toggle-switch"><input type="checkbox" id="cfg-advancedMetrics" {{ 'checked' if s.advancedMetrics }}><span class="toggle-slider"></span></label>
+            <div><div style="font-weight:600;">Coleta Avançada de Métricas</div><div style="color:var(--text-secondary);font-size:0.875rem;">Exibe SFP (temperatura, tensão, BER, uptime) nos cards de ONU do Dashboard, além dos indicadores básicos</div></div>
+        </div>
+    </div>
+</div>
+
+<div class="settings-section {{ 'active' if current_settings_tab == 'notifications' }}" id="settings-notifications">
+    <div class="card">
+        <h3 style="margin-bottom:1.5rem;">Configurações de Notificação</h3>
+        <div class="form-group">
+            <label class="form-label">Métodos de Notificação</label>
+            <div style="display:flex;flex-direction:column;gap:1rem;">
+                {% for id, label, desc in [('notifyEmail', 'Email', 'Alertas por email'), ('notifyTelegram', 'Telegram Bot', 'Notificações no Telegram'), ('notifySMS', 'SMS', 'Alertas por SMS (críticos apenas)')] %}
+                <div style="display:flex;align-items:center;gap:1rem;">
+                    <label class="toggle-switch"><input type="checkbox" id="cfg-{{ id }}" {{ 'checked' if s[id] }}><span class="toggle-slider"></span></label>
+                    <div><div style="font-weight:600;">{{ label }}</div><div style="color:var(--text-secondary);font-size:0.875rem;">{{ desc }}</div></div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="form-group"><label class="form-label">Email para Notificações</label><input type="email" class="form-control" id="cfg-email" value="{{ s.email }}"></div>
+    </div>
+</div>
+
+<div class="settings-section {{ 'active' if current_settings_tab == 'system' }}" id="settings-system">
+    <div class="card">
+        <h3 style="margin-bottom:1.5rem;">Configurações do Sistema</h3>
+        <div class="form-group"><label class="form-label">Endereço IP do Nó</label>
+            <div class="form-row">
+                <input type="text" class="form-control" id="cfg-ip" value="{{ s.ip }}" placeholder="Endereço IP">
+                <input type="text" class="form-control" id="cfg-mask" value="{{ s.mask }}" placeholder="Máscara de Rede">
+            </div>
+        </div>
+        <div class="form-group"><label class="form-label">Gateway Padrão</label><input type="text" class="form-control" id="cfg-gateway" value="{{ s.gateway }}"></div>
+        <div class="form-group"><label class="form-label">Servidores DNS</label>
+            <div class="form-row">
+                <input type="text" class="form-control" id="cfg-dns1" value="{{ s.dns1 }}" placeholder="DNS Primário">
+                <input type="text" class="form-control" id="cfg-dns2" value="{{ s.dns2 }}" placeholder="DNS Secundário">
+            </div>
+        </div>
+        <div style="margin-top:2rem;padding-top:1.5rem;border-top:1px solid var(--border-color);">
+            <h3 style="margin-bottom:1rem;color:var(--danger-color);">Zona de Perigo</h3>
+            <button class="btn btn-danger" style="margin-right:1rem;" id="restart-services-btn"><i class="fas fa-redo"></i> Reiniciar Serviços</button>
+            <button class="btn btn-danger" id="restart-system-btn"><i class="fas fa-power-off"></i> Reiniciar Sistema</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script src="/static/js/settings.js"></script>
+{% endblock %}

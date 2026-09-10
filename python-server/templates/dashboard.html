@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m %}
+
+{% block content %}
+<header class="header">
+    <div class="header-title">
+        <h1>Dashboard de Monitoramento</h1>
+        <p>Monitoramento preditivo em tempo real • Edge Computing</p>
+    </div>
+    <div class="header-actions">
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+            <label style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap;">
+                <i class="fas fa-network-wired" style="color:var(--primary-color);margin-right:0.35rem;"></i>Porta GPON:
+            </label>
+            <select id="gpon-port-selector" class="form-control" style="width:160px;font-size:0.85rem;" data-current="{{ current_gpon_port }}">
+                <option value="">Carregando...</option>
+            </select>
+        </div>
+        <div class="time-display"><i class="far fa-clock"></i> <span id="current-time">--:--:--</span></div>
+        <button class="btn btn-primary" id="refresh-btn"><i class="fas fa-sync-alt"></i> Atualizar</button>
+    </div>
+</header>
+
+<section class="kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-header"><div class="kpi-title">ONUs Ativas</div><i class="fas fa-wifi kpi-icon"></i></div>
+        <div class="kpi-value" id="onus" style="font-size:1.75rem;">--/8</div>
+        <div class="kpi-trend" id="onus-trend">
+            <i class="fas fa-spinner fa-spin" style="font-size:0.75rem;"></i>
+            <span>Carregando...</span>
+        </div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-header"><div class="kpi-title">Sinal Médio RxPower</div><i class="fas fa-satellite-dish kpi-icon"></i></div>
+        <div class="kpi-value" id="avg-rxpower" style="font-size:1.5rem;">-- dBm</div>
+        <div class="kpi-trend">
+            <span style="font-size:0.75rem;color:var(--text-muted);">Limiar crítico: -27 dBm</span>
+        </div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-header"><div class="kpi-title">Latência Média</div><i class="fas fa-bolt kpi-icon"></i></div>
+        <div class="kpi-value" id="latency">--<span style="font-size:1rem;">ms</span></div>
+        <div class="kpi-trend" id="latency-trend">
+            <i class="fas fa-minus"></i> <span>Calculando...</span>
+        </div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-header"><div class="kpi-title">Disponibilidade</div><i class="fas fa-signal kpi-icon"></i></div>
+        <div class="kpi-value" id="availability">--%</div>
+        <div class="kpi-trend">
+            <div style="width:100%;height:6px;background:var(--bg-elevated);border-radius:3px;margin-top:0.5rem;">
+                <div id="avail-bar" style="width:0%;height:100%;background:var(--success-color);border-radius:3px;transition:width 0.6s;"></div>
+            </div>
+        </div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-header"><div class="kpi-title">CPU OLT</div><i class="fas fa-microchip kpi-icon"></i></div>
+        <div class="kpi-value" id="cpu-usage">--%</div>
+        <div class="kpi-trend">
+            <div style="width:100%;height:6px;background:var(--bg-elevated);border-radius:3px;margin-top:0.5rem;">
+                <div id="cpu-bar" style="width:0%;height:100%;background:var(--success-color);border-radius:3px;transition:width 0.4s;"></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<div class="card">
+    <div class="section-header">
+        <h2 class="section-title">Consumo de Banda por OLT</h2>
+        <span style="font-size:0.75rem;color:var(--text-muted);">
+            <span style="color:#2563eb;">&#9632;</span> IN &nbsp;
+            <span style="color:#10b981;">&#9632;</span> OUT &nbsp;&nbsp;
+            <span style="color:#f59e0b;">&#9632;</span> &gt; 50% &nbsp;
+            <span style="color:#dc2626;">&#9632;</span> &gt; 80%
+        </span>
+    </div>
+    <div style="height:300px;position:relative;"><canvas id="chart-olt-bandwidth"></canvas></div>
+</div>
+
+<div class="card">
+    <div class="section-header"><h2 class="section-title">Latência Média das ONUs</h2></div>
+    <div style="height:220px;position:relative;"><canvas id="chart-latency-gpon"></canvas></div>
+</div>
+
+<div class="card">
+    <div class="section-header">
+        <h2 class="section-title">Alertas Ativos</h2>
+        <div class="badge badge-critical">{{ alerts | selectattr("severity", "equalto", "critical") | list | length }} Críticos</div>
+    </div>
+    <div class="alerts-list">{{ m.alert_items(alerts) }}</div>
+</div>
+
+<div class="card">
+    <div class="section-header">
+        <h2 class="section-title">Dispositivos Monitorados</h2>
+        <button class="btn btn-secondary" id="add-device-btn"><i class="fas fa-plus"></i> Adicionar Dispositivo</button>
+    </div>
+    <div class="devices-grid" id="devices-grid-dashboard">{{ m.device_cards(devices, advanced_metrics) }}</div>
+</div>
+
+<!-- SNMP Traps Summary -->
+<div id="trap-summary-placeholder"></div>
+
+<footer class="footer">
+    <div class="node-info"><i class="fas fa-microchip"></i> <span>SINAPSE Node • {{ settings.nodeName }} • {{ settings.ip }}</span></div>
+    <div><span id="data-update">Última atualização: --:--:--</span></div>
+</footer>
+{% endblock %}
+
+{% block page_script %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}

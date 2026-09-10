@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m %}
+
+{% block content %}
+<header class="header">
+    <div class="header-title">
+        <h1>Histórico de Eventos</h1>
+        <p>Registro completo de todas as atividades do sistema</p>
+    </div>
+    <div class="header-actions">
+        <button class="btn btn-secondary" id="export-history-btn"><i class="fas fa-download"></i> Exportar</button>
+    </div>
+</header>
+
+<div style="color:var(--text-secondary);font-size:0.8rem;margin-bottom:1rem;">
+    <i class="fas fa-database" style="color:var(--primary-color);margin-right:0.35rem;"></i>
+    Política de retenção ativa: <strong>{{ settings.dataRetention }}</strong>
+    <a href="/settings" style="color:var(--secondary-color);margin-left:0.5rem;">alterar em Configurações</a>
+</div>
+
+<div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap;align-items:center;">
+    <input type="text" id="history-search" class="form-control" placeholder="Buscar evento, dispositivo ou ação..." style="flex:1;min-width:250px;">
+    <select id="history-filter-type" class="form-control" style="width:180px;">
+        <option value="">Todos os tipos</option>
+        <option value="alert">Alertas</option>
+        <option value="maintenance">Manutenções</option>
+        <option value="backup">Backups</option>
+        <option value="device">Dispositivos</option>
+    </select>
+    <select id="history-filter-period" class="form-control" style="width:160px;">
+        <option value="">Todo o período</option>
+        <option value="today">Hoje</option>
+        <option value="7">Últimos 7 dias</option>
+        <option value="30">Últimos 30 dias</option>
+        <option value="90">Últimos 90 dias</option>
+    </select>
+    <button class="btn btn-primary" id="apply-history-filters"><i class="fas fa-filter"></i> Filtrar</button>
+</div>
+
+<div class="card">
+    <div class="section-header">
+        <h2 class="section-title">Eventos</h2>
+        <div style="color:var(--text-secondary);font-size:0.875rem;" id="history-count">Mostrando <strong>{{ history | length }}</strong> evento(s)</div>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead><tr><th>Data/Hora</th><th>Evento</th><th>Dispositivo</th><th>Duração</th><th>Ação</th><th>Usuário</th></tr></thead>
+            <tbody id="history-table-body">{{ m.history_rows(history) }}</tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="section-header"><h2 class="section-title">Backup e Restauração</h2></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+        <div style="background:var(--bg-surface);padding:1.5rem;border-radius:var(--border-radius);">
+            <h3 style="margin-bottom:0.75rem;">Criar Backup</h3>
+            <div style="color:var(--text-secondary);font-size:0.875rem;margin-bottom:1.25rem;">
+                Salva todos os dados do sistema: dispositivos, alertas, regras e configurações.
+                {% if backups %}<div style="margin-top:0.5rem;color:var(--text-muted);">Último backup: {{ backups[0].date }} ({{ backups[0].size }})</div>{% endif %}
+            </div>
+            <button class="btn btn-primary" id="create-backup-btn"><i class="fas fa-database"></i> Criar Backup Agora</button>
+        </div>
+        <div style="background:var(--bg-surface);padding:1.5rem;border-radius:var(--border-radius);">
+            <h3 style="margin-bottom:0.75rem;">Restaurar Backup</h3>
+            <div style="color:var(--text-secondary);font-size:0.875rem;margin-bottom:1rem;">Selecione um ponto de restauração:</div>
+            <select class="form-control" id="backup-select" style="margin-bottom:1rem;">{{ m.backup_options(backups) }}</select>
+            <button class="btn btn-warning" id="restore-backup-btn" {{ 'disabled' if not backups }}>
+                <i class="fas fa-undo"></i> Restaurar Backup
+            </button>
+        </div>
+    </div>
+    {% if backups %}
+    <div style="margin-top:1.5rem;">
+        <h4 style="margin-bottom:1rem;color:var(--text-secondary);font-size:0.875rem;text-transform:uppercase;letter-spacing:0.05em;">Backups Disponíveis</h4>
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Arquivo</th><th>Data</th><th>Tamanho</th><th>Ações</th></tr></thead>
+                <tbody>
+                    {% for b in backups %}
+                    <tr>
+                        <td><i class="fas fa-file-archive" style="color:var(--text-secondary);margin-right:0.5rem;"></i>{{ b.filename }}</td>
+                        <td style="font-size:0.875rem;">{{ b.date }}</td>
+                        <td style="font-size:0.875rem;">{{ b.size }}</td>
+                        <td>
+                            <div class="device-actions">
+                                <button class="action-btn" title="Restaurar este backup" onclick="quickRestoreBackup({{ b.id }})"><i class="fas fa-undo"></i></button>
+                                <button class="action-btn" title="Remover" style="color:var(--danger-color);" onclick="removeBackup({{ b.id }})"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script src="/static/js/history.js"></script>
+{% endblock %}

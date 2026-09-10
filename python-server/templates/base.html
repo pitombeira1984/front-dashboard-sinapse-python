@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="{{ theme }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SINAPSE - {{ page_title }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- SIDEBAR (NAVEGAÇÃO) -->
+        <aside class="sidebar">
+            <a href="/" class="logo" id="logo">
+                <i class="fas fa-brain logo-icon"></i>
+                <span class="logo-text">SINAPSE</span>
+            </a>
+
+            <nav class="nav-menu">
+                <a href="/" class="nav-item {{ 'active' if current_page == 'dashboard' }}" data-page="dashboard">
+                    <i class="fas fa-tachometer-alt nav-icon"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/devices" class="nav-item {{ 'active' if current_page == 'devices' }}" data-page="devices">
+                    <i class="fas fa-server nav-icon"></i>
+                    <span>Dispositivos</span>
+                </a>
+                <a href="/alerts" class="nav-item {{ 'active' if current_page == 'alerts' }}" data-page="alerts">
+                    <i class="fas fa-exclamation-triangle nav-icon"></i>
+                    <span>Alertas</span>
+                </a>
+                <a href="/analysis" class="nav-item {{ 'active' if current_page == 'analysis' }}" data-page="analysis">
+                    <i class="fas fa-chart-line nav-icon"></i>
+                    <span>Análise</span>
+                </a>
+                <a href="/settings" class="nav-item {{ 'active' if current_page == 'settings' }}" data-page="settings">
+                    <i class="fas fa-cogs nav-icon"></i>
+                    <span>Configurações</span>
+                </a>
+                <a href="/history" class="nav-item {{ 'active' if current_page == 'history' }}" data-page="history">
+                    <i class="fas fa-history nav-icon"></i>
+                    <span>Histórico</span>
+                </a>
+            </nav>
+
+            <button class="theme-toggle-btn" id="theme-toggle-btn" title="Alternar tema">
+                <span class="nav-icon"><i class="fas {{ 'fa-moon' if theme == 'light' else 'fa-sun' }}" id="theme-icon"></i></span>
+                <span class="theme-toggle-label" id="theme-label">{{ 'Tema Escuro' if theme == 'light' else 'Tema Claro' }}</span>
+            </button>
+
+            <div class="system-status">
+                <div class="status-indicator">
+                    <div class="status-dot"></div>
+                    <span>Sistema Operacional</span>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.5rem;" id="sidebar-node-info">
+                    {{ settings.nodeName }}<br>{{ settings.ip }}
+                </div>
+            </div>
+        </aside>
+
+        <!-- CONTEÚDO PRINCIPAL -->
+        <main class="main-content" id="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- MODAL GENÉRICO -->
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Título do Modal</h2>
+                <button class="close-modal" id="close-modal">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                Conteúdo do modal será inserido aqui
+            </div>
+            <div class="modal-footer" id="modal-footer">
+                <button class="btn btn-secondary" id="modal-cancel">Cancelar</button>
+                <button class="btn btn-primary" id="modal-confirm">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- DRAWER DE INFORMAÇÕES DO CLIENTE -->
+    <div class="client-drawer-overlay" id="client-drawer-overlay" onclick="closeClientDrawer()"></div>
+    <aside class="client-drawer" id="client-drawer">
+        <div class="client-drawer-header">
+            <div style="flex:1;min-width:0;">
+                <h2 id="drawer-client-name" style="font-size:1.1rem;font-weight:700;margin-bottom:0.5rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">--</h2>
+                <span id="drawer-criticality-badge" class="badge">--</span>
+            </div>
+            <button class="close-drawer-btn" onclick="closeClientDrawer()" title="Fechar">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="client-drawer-body" id="client-drawer-body"></div>
+    </aside>
+
+    <!-- Configurações atuais, renderizadas pelo servidor (evita um round-trip extra
+         só para sincronizar o intervalo de polling com o que foi salvo em Configurações) -->
+    <script>window.SINAPSE_SETTINGS = {{ settings | tojson }};</script>
+
+    <!-- DEPENDÊNCIAS EXTERNAS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+    <!-- MÓDULOS DA APLICAÇÃO -->
+    <script src="/static/js/state.js"></script>
+    <script src="/static/js/storage.js"></script>
+    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/charts.js"></script>
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/trap-ui.js"></script>
+    <script src="/static/js/app.js"></script>
+    {% block page_script %}{% endblock %}
+</body>
+</html>

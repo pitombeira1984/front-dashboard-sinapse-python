@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m %}
+
+{% block content %}
+<header class="header">
+    <div class="header-title">
+        <h1>Análise e Predição</h1>
+        <p>Inteligência Artificial para detecção proativa de falhas</p>
+    </div>
+    <div class="header-actions">
+        <button class="btn btn-primary" id="run-analysis-btn"><i class="fas fa-play"></i> Executar Análise</button>
+    </div>
+</header>
+
+<div style="display:flex;gap:1.5rem;flex-wrap:wrap;color:var(--text-secondary);font-size:0.8rem;margin-bottom:1rem;">
+    <span id="analysis-devices-count"><i class="fas fa-server" style="color:var(--primary-color);margin-right:0.35rem;"></i>Contando dispositivos monitorados...</span>
+    <span><i class="fas fa-exclamation-triangle" style="color:var(--warning-color);margin-right:0.35rem;"></i>{{ active_alerts_count }} alerta(s) ativo(s)</span>
+    <span id="analysis-updated-at"><i class="fas fa-clock" style="margin-right:0.35rem;"></i>Aguardando análise...</span>
+</div>
+
+<div class="time-range-selector">
+    {% for r in ['24h', '7d', '30d', 'custom'] %}
+    <button class="time-btn {{ 'active' if current_time_range == r }}" data-range="{{ r }}">
+        {{ {'24h': '24 Horas', '7d': '7 Dias', '30d': '30 Dias', 'custom': 'Personalizado'}[r] }}
+    </button>
+    {% endfor %}
+</div>
+
+<div class="card" id="custom-range-card" style="{{ '' if current_time_range == 'custom' else 'display:none;' }}">
+    <div style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap;">
+        <div class="form-group" style="margin:0;flex:1;min-width:150px;">
+            <label class="form-label">Data Início</label>
+            <input type="date" class="form-control" id="custom-start">
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:150px;">
+            <label class="form-label">Data Fim</label>
+            <input type="date" class="form-control" id="custom-end">
+        </div>
+        <button class="btn btn-primary" id="apply-custom-range"><i class="fas fa-filter"></i> Aplicar</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="section-header">
+        <h2 class="section-title">Previsões de Falhas</h2>
+        <div class="badge badge-warning" id="predictions-badge">Carregando...</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+        <div>
+            <h3 style="margin-bottom:1rem;font-size:1.125rem;">Próximas Falhas Previstas</h3>
+            <div class="alerts-list" id="predictions-list">
+                <div style="text-align:center;color:var(--text-muted);padding:2rem;">
+                    <i class="fas fa-spinner fa-spin" style="margin-right:0.5rem;"></i>Analisando telemetria em tempo real...
+                </div>
+            </div>
+        </div>
+        <div>
+            <h3 style="margin-bottom:1rem;font-size:1.125rem;">Recomendações de Ação</h3>
+            <div id="recommendations-panel">
+                <div style="background:var(--bg-surface);padding:1rem;border-radius:var(--border-radius);color:var(--text-muted);font-size:0.875rem;">
+                    <i class="fas fa-spinner fa-spin" style="margin-right:0.5rem;"></i>Aguardando resultado da análise...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="section-header">
+        <h2 class="section-title">Manutenções Agendadas</h2>
+        <span class="badge badge-warning" id="maintenance-count">{{ maintenances | length }}</span>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead><tr><th>Dispositivo</th><th>Data/Hora</th><th>Descrição</th><th>Duração</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody id="maintenance-table-body">{{ m.maintenance_rows(maintenances) }}</tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="section-header"><h2 class="section-title">Modelos de IA Ativos</h2></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1rem;" id="ai-models-grid">
+        <div style="background:var(--bg-surface);padding:1.5rem;border-radius:var(--border-radius);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <div style="font-weight:600;">Regressão Linear</div>
+                <span class="badge badge-success">Ativo</span>
+            </div>
+            <div style="color:var(--text-secondary);font-size:0.875rem;margin-bottom:1rem;">Predição de degradação óptica, tráfego e latência por tendência (mínimos quadrados)</div>
+            <div style="font-size:0.875rem;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.25rem;"><span>Confiança média (previsões ativas):</span><span>--</span></div>
+                <div style="width:100%;height:6px;background:var(--bg-elevated);border-radius:3px;">
+                    <div style="width:0%;height:100%;background:var(--success-color);border-radius:3px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script src="/static/js/analysis.js"></script>
+{% endblock %}

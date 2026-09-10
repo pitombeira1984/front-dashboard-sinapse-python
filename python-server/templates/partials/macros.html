@@ -1,0 +1,252 @@
+{% macro alert_items(alerts) %}
+{% set active = alerts | rejectattr("severity", "equalto", "resolved") | list %}
+{% if not active %}
+<div style="text-align:center;color:var(--text-muted);padding:2rem;">Nenhum alerta ativo.</div>
+{% else %}
+{% for a in active %}
+<div class="alert-item alert-{{ a.severity }}">
+    <i class="fas {{ 'fa-exclamation-circle' if a.severity == 'critical' else ('fa-exclamation-triangle' if a.severity == 'warning' else 'fa-info-circle') }} alert-icon"></i>
+    <div class="alert-content">
+        <div class="alert-title">{{ a.title }}</div>
+        <div class="alert-description">{{ a.description }}</div>
+    </div>
+    <div class="alert-time">{{ a.time }}</div>
+</div>
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+
+{% macro device_cards(devices, advanced_metrics) %}
+{% if not devices %}
+<div style="color:var(--text-muted);padding:1.5rem;text-align:center;grid-column:1/-1;">Nenhum dispositivo encontrado.</div>
+{% else %}
+{% for d in devices %}
+{% set rx_color = ('var(--danger-color)' if d.rxPower < -27 else ('var(--warning-color)' if d.rxPower < -24 else 'var(--success-color)')) if d.rxPower is defined else 'var(--text-primary)' %}
+<div class="device-card">
+    <div class="device-header">
+        <div class="device-name">{{ d.name }}</div>
+        <div class="device-status status-{{ d.status }}">
+            <i class="fas fa-circle"></i>
+            <span>{{ 'Online' if d.status == 'online' else 'Offline' }}</span>
+        </div>
+    </div>
+    <div style="color:var(--text-secondary);font-size:0.875rem;">IP: {{ d.ip }} • {{ d.type }}{{ ' • ' + d.port if d.port else '' }}</div>
+    <div class="device-metrics">
+        {% if d.type == 'OLT' %}
+            <div class="metric"><div class="metric-label">CPU</div><div class="metric-value">{{ d.cpu if d.cpu is defined else '--' }}%</div></div>
+            <div class="metric"><div class="metric-label">Memória</div><div class="metric-value">{{ d.memory if d.memory is defined else '--' }}%</div></div>
+            <div class="metric"><div class="metric-label">Temp.</div><div class="metric-value">{{ d.temperature if d.temperature is defined else '--' }}°C</div></div>
+            <div class="metric"><div class="metric-label">ONUs Ativas</div><div class="metric-value">{{ d.onus_active if d.onus_active is defined else '--' }}/{{ d.onus_total if d.onus_total is defined else '--' }}</div></div>
+        {% elif d.type == 'ONU' %}
+            {% set tx_color = ('var(--danger-color)' if (d.txPower < 0.5 or d.txPower > 5) else ('var(--warning-color)' if d.txPower < 1.0 else 'var(--success-color)')) if d.txPower is defined else 'var(--text-primary)' %}
+            {% set sfp_color = ('var(--danger-color)' if d.sfpTemp >= 70 else ('var(--warning-color)' if d.sfpTemp >= 50 else 'var(--success-color)')) if d.sfpTemp is defined else 'var(--text-primary)' %}
+            {% set v_color = ('var(--danger-color)' if (d.sfpVoltage < 3.0 or d.sfpVoltage > 3.6) else ('var(--warning-color)' if (d.sfpVoltage < 3.1 or d.sfpVoltage > 3.5) else 'var(--success-color)')) if d.sfpVoltage is defined else 'var(--text-primary)' %}
+            {% set ber_color = ('var(--danger-color)' if d.ber > 1e-6 else ('var(--warning-color)' if d.ber > 1e-9 else 'var(--success-color)')) if d.ber is defined else 'var(--text-primary)' %}
+            <div class="metric"><div class="metric-label">RxPower</div><div class="metric-value" style="color:{{ rx_color }};">{{ (d.rxPower ~ ' dBm') if d.status == 'online' and d.rxPower is defined else '--' }}</div></div>
+            <div class="metric"><div class="metric-label">TxPower</div><div class="metric-value" style="color:{{ tx_color }};">{{ (d.txPower ~ ' dBm') if d.status == 'online' and d.txPower is defined else '--' }}</div></div>
+            {% if advanced_metrics %}
+            <div class="metric"><div class="metric-label">Temp. SFP</div><div class="metric-value" style="color:{{ sfp_color }};">{{ (d.sfpTemp ~ ' °C') if d.status == 'online' and d.sfpTemp is defined else '--' }}</div></div>
+            <div class="metric"><div class="metric-label">Tensão SFP</div><div class="metric-value" style="color:{{ v_color }};">{{ (d.sfpVoltage ~ ' V') if d.status == 'online' and d.sfpVoltage is defined else '--' }}</div></div>
+            <div class="metric"><div class="metric-label">BER</div><div class="metric-value" style="color:{{ ber_color }};font-size:0.8rem;">{{ '%.2e' % d.ber if d.status == 'online' and d.ber is defined else '--' }}</div></div>
+            <div class="metric"><div class="metric-label">Uptime SFP</div><div class="metric-value" style="font-size:0.75rem;">{{ d.uptime if d.status == 'online' and d.uptime is defined else '--' }}</div></div>
+            {% endif %}
+            <div class="metric"><div class="metric-label">Latência</div><div class="metric-value">{{ (d.latency ~ ' ms') if d.status == 'online' and d.latency is defined else '--' }}</div></div>
+            <div class="metric"><div class="metric-label">Distância</div><div class="metric-value">{{ d.distance if d.distance is defined else '--' }}</div></div>
+            <div class="metric metric-cliente"><div class="metric-label">Cliente</div><div class="metric-value" style="font-size:0.75rem;display:flex;align-items:center;gap:0.4rem;">{{ d.client if d.client is defined else '--' }}{% if d.id %}<button class="client-info-btn" onclick="openClientDrawer({{ d.id }})" title="Ver informações do cliente"><i class="fas fa-info-circle"></i></button>{% endif %}</div></div>
+        {% elif d.type == 'Router' %}
+            <div class="metric"><div class="metric-label">Tráfego IN</div><div class="metric-value">{{ d.traffic_in if d.traffic_in is defined else '--' }} Mbps</div></div>
+            <div class="metric"><div class="metric-label">Tráfego OUT</div><div class="metric-value">{{ d.traffic_out if d.traffic_out is defined else '--' }} Mbps</div></div>
+            <div class="metric"><div class="metric-label">Pacotes/s</div><div class="metric-value">{{ d.packets if d.packets is defined else 0 }}</div></div>
+            <div class="metric"><div class="metric-label">Uptime</div><div class="metric-value">{{ d.uptime or '-' }}</div></div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+
+{% macro device_rows(devices) %}
+{% if not devices %}
+<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">Nenhum dispositivo encontrado.</td></tr>
+{% else %}
+{% for d in devices %}
+{% set type_badge = 'badge-warning' if d.type == 'OLT' else ('badge-success' if d.type in ['ONU', 'Router'] else 'badge-critical') %}
+<tr data-device-id="{{ d.id }}">
+    <td>
+        <div style="font-weight:600;">{{ d.name }}</div>
+        {% if d.client %}<div style="font-size:0.8rem;color:var(--text-secondary);">{{ d.client }}</div>{% else %}<div style="font-size:0.8rem;color:var(--text-muted);">ID: {{ d.id }}</div>{% endif %}
+    </td>
+    <td>
+        <div style="font-size:0.875rem;">{{ d.ip or '--' }}</div>
+        {% if d.type == 'ONU' %}
+            <div style="font-size:0.72rem;color:var(--text-muted);font-family:monospace;">Porta: {{ d.gponPort or '--' }}</div>
+            {% if d.serial %}<div style="font-size:0.7rem;color:var(--text-muted);">{{ d.serial }}</div>{% endif %}
+        {% elif d.type == 'OLT' and d.vendor %}
+            <div style="font-size:0.75rem;color:var(--text-muted);">{{ d.vendor }}{{ ' • ' + d.location if d.location else '' }}</div>
+        {% endif %}
+    </td>
+    <td><span class="badge {{ type_badge }}" style="font-size:0.75rem;">{{ d.type }}</span></td>
+    <td>
+        <div class="device-status status-{{ d.status }}" style="justify-content:flex-start;">
+            <i class="fas fa-circle"></i>
+            <span>{{ 'Online' if d.status == 'online' else 'Offline' }}</span>
+        </div>
+    </td>
+    <td>
+        {% if d.type == 'ONU' and d.status == 'online' %}
+            {% set rx_color = 'var(--danger-color)' if (d.rxPower or 0) < -27 else ('var(--warning-color)' if (d.rxPower or 0) < -24 else 'var(--success-color)') %}
+            <div style="font-weight:600;color:{{ rx_color }};">{{ (d.rxPower ~ ' dBm') if d.rxPower is not none else '--' }}</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">{{ (d.latency ~ ' ms') if d.latency is not none else '' }}</div>
+        {% elif d.type == 'OLT' %}
+            {% set cpu_color = 'var(--danger-color)' if (d.cpu or 0) > 80 else ('var(--warning-color)' if (d.cpu or 0) > 60 else 'var(--text-primary)') %}
+            <div style="color:{{ cpu_color }};">CPU: {{ d.cpu if d.cpu is defined else '--' }}%</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">ONUs: {{ d.onus_active if d.onus_active is defined else '--' }}/{{ d.onus_total if d.onus_total is defined else '--' }}</div>
+        {% elif d.status == 'online' %}
+            <span style="font-size:0.8rem;color:var(--text-secondary);">Online</span>
+        {% else %}
+            <span style="color:var(--text-muted);">--</span>
+        {% endif %}
+    </td>
+    <td>
+        <div class="device-actions">
+            <button class="action-btn" title="Editar" onclick="editDevice({{ d.id }})"><i class="fas fa-edit"></i></button>
+            <button class="action-btn" title="Ver Métricas" onclick="viewDeviceMetrics({{ d.id }})"><i class="fas fa-chart-bar"></i></button>
+            <button class="action-btn" title="Testar Conexão" onclick="testDevice({{ d.id }})"><i class="fas fa-plug"></i></button>
+            <button class="action-btn" title="Remover" style="color:var(--danger-color);" onclick="removeDevice({{ d.id }})"><i class="fas fa-trash"></i></button>
+        </div>
+    </td>
+</tr>
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+
+{% macro alert_rows(alerts) %}
+{% if not alerts %}
+<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">Nenhum alerta encontrado.</td></tr>
+{% else %}
+{% for a in alerts %}
+<tr data-alert-id="{{ a.id }}">
+    <td><span class="badge {{ 'badge-critical' if a.severity == 'critical' else ('badge-warning' if a.severity == 'warning' else 'badge-success') }}">
+        {{ 'Crítico' if a.severity == 'critical' else ('Aviso' if a.severity == 'warning' else ('Resolvido' if a.severity == 'resolved' else 'Info')) }}
+    </span></td>
+    <td><div style="font-weight:600;">{{ a.title }}</div><div style="font-size:0.875rem;color:var(--text-secondary);">{{ a.description }}</div></td>
+    <td>{{ a.device }}</td>
+    <td>{{ a.time }}</td>
+    <td>{{ a.resolvedAt or '--' }}</td>
+    <td>
+        <div class="device-actions">
+            {% if a.severity != 'resolved' %}
+            <button class="action-btn" title="Resolver" onclick="resolveAlert({{ a.id }})"><i class="fas fa-check"></i></button>
+            <button class="action-btn" title="Ignorar" onclick="ignoreAlert({{ a.id }})"><i class="fas fa-times"></i></button>
+            {% endif %}
+            <button class="action-btn" title="Detalhes" onclick="viewAlertDetails({{ a.id }})"><i class="fas fa-eye"></i></button>
+        </div>
+    </td>
+</tr>
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+
+{% macro monitoring_param_rows(params, param_types) %}
+{% if not params %}
+<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;">Nenhum parâmetro configurado. Clique em <strong>Novo Parâmetro</strong> para começar.</td></tr>
+{% else %}
+{% for p in params %}
+{% set def = param_types.get(p.paramType, {}) %}
+{% set sev_color = 'var(--danger-color)' if p.severity == 'critical' else ('var(--warning-color)' if p.severity == 'warning' else 'var(--secondary-color)') %}
+<tr data-param-id="{{ p.id }}">
+    <td>
+        <div style="display:flex;align-items:center;gap:0.6rem;">
+            <i class="fas {{ def.get('icon', 'fa-bell') }}" style="color:{{ sev_color }};font-size:0.95rem;flex-shrink:0;"></i>
+            <div>
+                <div style="font-weight:600;">{{ p.name }}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);">{{ def.get('label', p.paramType) }}</div>
+            </div>
+        </div>
+    </td>
+    <td style="font-size:0.875rem;">{{ 'Todos' if p.target == 'all' else p.target }}</td>
+    <td>
+        {% if def.get('hasThreshold') %}<code style="background:var(--bg-base);padding:0.15rem 0.45rem;border-radius:4px;font-size:0.8rem;">{{ p.operator }} {{ p.threshold }} {{ p.unit }}</code>
+        {% else %}<span style="font-size:0.8rem;color:var(--text-muted);">baseado em evento</span>{% endif %}
+        {% if p.duration and p.duration > 0 %}<div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.2rem;">por {{ p.duration }} min</div>{% endif %}
+    </td>
+    <td><span class="badge {{ 'badge-critical' if p.severity == 'critical' else ('badge-warning' if p.severity == 'warning' else 'badge-success') }}">{{ 'Crítico' if p.severity == 'critical' else ('Aviso' if p.severity == 'warning' else 'Info') }}</span></td>
+    <td style="font-size:0.8rem;color:var(--text-secondary);">{{ p.action }}</td>
+    <td>
+        <div style="display:flex;flex-direction:column;gap:0.2rem;">
+            <span class="badge {{ 'badge-success' if p.active else '' }}" style="{{ '' if p.active else 'background:rgba(100,116,139,0.15);color:#64748b;border:1px solid rgba(100,116,139,0.3);' }}">{{ 'Ativo' if p.active else 'Inativo' }}</span>
+            {% if p.triggerCount and p.triggerCount > 0 %}<span style="font-size:0.7rem;color:var(--text-muted);">{{ p.triggerCount }}× disparado</span>{% endif %}
+        </div>
+    </td>
+    <td>
+        <div class="device-actions">
+            <button class="action-btn" title="Editar" onclick="editMonitoringParam({{ p.id }})"><i class="fas fa-edit"></i></button>
+            <button class="action-btn" title="{{ 'Desativar' if p.active else 'Ativar' }}" onclick="toggleMonitoringParam({{ p.id }})">
+                <i class="fas {{ 'fa-toggle-on' if p.active else 'fa-toggle-off' }}"></i>
+            </button>
+            <button class="action-btn" title="Remover" style="color:var(--danger-color);" onclick="removeMonitoringParam({{ p.id }})">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    </td>
+</tr>
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+
+{% macro maintenance_rows(items) %}
+{% if not items %}
+<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">Nenhuma manutenção agendada.</td></tr>
+{% else %}
+{% for m in items %}
+<tr data-maintenance-id="{{ m.id }}">
+    <td><div style="font-weight:600;">{{ m.device }}</div></td>
+    <td style="font-size:0.875rem;">{{ m.date }} {{ m.time or '' }}</td>
+    <td style="font-size:0.875rem;color:var(--text-secondary);">{{ m.description }}</td>
+    <td>{{ m.duration or '--' }}</td>
+    <td><span class="badge {{ 'badge-warning' if m.status == 'agendado' else 'badge-success' }}">{{ m.status }}</span></td>
+    <td>
+        <div class="device-actions">
+            <button class="action-btn" title="Cancelar" style="color:var(--danger-color);" onclick="cancelMaintenance({{ m.id }})">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    </td>
+</tr>
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+
+{% macro history_rows(items) %}
+{% if not items %}
+<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">Nenhum evento encontrado.</td></tr>
+{% else %}
+{% for item in items %}
+<tr>
+    <td style="font-size:0.875rem;">{{ item.time }}</td>
+    <td><div style="font-weight:600;">{{ item.event }}</div><div style="font-size:0.75rem;color:var(--text-muted);">ID: {{ item.id }}</div></td>
+    <td>{{ item.device }}</td>
+    <td>{{ item.duration or '--' }}</td>
+    <td style="font-size:0.875rem;color:var(--text-secondary);">{{ item.action or '--' }}</td>
+    <td>{{ item.user or 'Sistema' }}</td>
+</tr>
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+
+{% macro backup_options(backups) %}
+{% if not backups %}
+<option value="">Nenhum backup disponível</option>
+{% else %}
+{% for b in backups %}
+<option value="{{ b.id }}">{{ b.filename }} — {{ b.date }} ({{ b.size }})</option>
+{% endfor %}
+{% endif %}
+{% endmacro %}

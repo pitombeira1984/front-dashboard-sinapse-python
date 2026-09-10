@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m %}
+
+{% block content %}
+<header class="header">
+    <div class="header-title">
+        <h1>Sistema de Alertas</h1>
+        <p>Monitore a rede com parâmetros configuráveis e gerencie notificações</p>
+    </div>
+    <div class="header-actions">
+        <button class="btn btn-primary" id="new-monitoring-param-btn"><i class="fas fa-plus"></i> Novo Parâmetro</button>
+    </div>
+</header>
+
+<div class="filter-bar">
+    {% for f in ['all', 'critical', 'warning', 'info', 'resolved'] %}
+    <button class="filter-btn {{ 'active' if current_alert_filter == f }}" data-filter="{{ f }}">
+        <i class="fas {{ 'fa-list' if f == 'all' else ('fa-exclamation-circle' if f == 'critical' else ('fa-exclamation-triangle' if f == 'warning' else ('fa-info-circle' if f == 'info' else 'fa-check-circle'))) }}"></i>
+        {{ {'all': 'Todos', 'critical': 'Críticos', 'warning': 'Avisos', 'info': 'Info', 'resolved': 'Resolvidos'}[f] }}
+        <span class="badge" style="margin-left:0.25rem;{{ 'background:rgba(220,38,38,0.15);color:#dc2626;border:1px solid rgba(220,38,38,0.3);' if f == 'critical' else ('background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);' if f == 'warning' else ('background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);' if f == 'resolved' else 'background:var(--bg-elevated);color:var(--text-primary);')) }}">
+            {{ alerts | length if f == 'all' else (alerts | selectattr("severity", "equalto", f) | list | length) }}
+        </span>
+    </button>
+    {% endfor %}
+</div>
+
+<div class="card">
+    <div class="section-header">
+        <h2 class="section-title">Alertas</h2>
+        <div style="display:flex;gap:0.75rem;align-items:center;">
+            <input type="text" id="alert-search" class="form-control" placeholder="Buscar alerta..." style="width:220px;">
+            <div class="badge badge-critical" id="alerts-critical-count">{{ alerts | selectattr("severity", "equalto", "critical") | list | length }} Críticos</div>
+        </div>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead><tr><th>Severidade</th><th>Descrição</th><th>Dispositivo</th><th>Início</th><th>Resolvido em</th><th>Ações</th></tr></thead>
+            <tbody id="alerts-table-body">{{ m.alert_rows(alerts) }}</tbody>
+        </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;">
+        <div style="color:var(--text-secondary);font-size:0.875rem;" id="alerts-count">Mostrando <strong>{{ alerts | length }}</strong> alerta(s)</div>
+    </div>
+</div>
+
+<!-- SNMP Traps Section -->
+<div id="traps-section-placeholder"></div>
+
+<div class="card">
+    <div class="section-header">
+        <h2 class="section-title">
+            <i class="fas fa-sliders-h" style="color:var(--primary-color);margin-right:0.5rem;"></i>
+            Parâmetros de Monitoramento
+        </h2>
+    </div>
+    <p style="color:var(--text-secondary);font-size:0.875rem;margin-bottom:1rem;">
+        Defina os limites e condições que disparam alertas automaticamente a cada ciclo de monitoramento (5s).
+        Os tipos de parâmetros são os mesmos utilizados pelos SNMP Traps.
+    </p>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Parâmetro</th><th>Alvo</th><th>Condição</th><th>Severidade</th>
+                    <th>Ação</th><th>Status</th><th>Ações</th>
+                </tr>
+            </thead>
+            <tbody id="monitoring-params-body">{{ m.monitoring_param_rows(monitoring_params, param_types) }}</tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script src="/static/js/alerts.js"></script>
+{% endblock %}

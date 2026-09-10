@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m %}
+
+{% block content %}
+<header class="header">
+    <div class="header-title">
+        <h1>Gerenciamento de Dispositivos</h1>
+        <p>OLTs e ONUs monitoradas em tempo real</p>
+    </div>
+    <div class="header-actions">
+        <button class="btn btn-primary" id="add-device-btn-page"><i class="fas fa-plus"></i> Novo Dispositivo</button>
+    </div>
+</header>
+
+<div class="card">
+    <div class="section-header">
+        <h2 class="section-title">Dispositivos Monitorados</h2>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="device-search" class="form-control" placeholder="Buscar por nome, IP ou cliente..." style="width:250px;">
+            <select id="device-filter-type" class="form-control" style="width:160px;">
+                <option value="">Todos os tipos</option>
+                <option value="OLT">OLT</option>
+                <option value="ONU">ONU</option>
+                <option value="Router">Router</option>
+                <option value="Switch">Switch</option>
+                <option value="Radio">Rádio</option>
+            </select>
+            <select id="device-filter-status" class="form-control" style="width:160px;">
+                <option value="">Todos status</option>
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+            </select>
+        </div>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr><th>Nome / Cliente</th><th>IP / Porta GPON</th><th>Tipo</th><th>Status</th><th>Métricas</th><th>Ações</th></tr>
+            </thead>
+            <tbody id="devices-table-body">{{ m.device_rows(devices) }}</tbody>
+        </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;">
+        <div style="color:var(--text-secondary);font-size:0.875rem;" id="devices-count">Mostrando <strong>{{ devices | length }}</strong> de <strong>{{ devices | length }}</strong> dispositivo(s)</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="section-header"><h2 class="section-title">Descoberta Automática</h2></div>
+    <div style="background:var(--bg-surface);padding:1.5rem;border-radius:var(--border-radius);">
+        <div style="display:flex;gap:1rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap;">
+            <input type="text" id="scan-range" class="form-control" placeholder="Faixa(s) de IP, separadas por vírgula (ex: 10.0.1.0/24, 192.168.0.0/24)" value="10.0.1.0/24" style="flex:1;min-width:200px;">
+            <select id="scan-protocol" class="form-control" style="width:140px;" title="Ping sozinho só confirma que o host está vivo — não identifica vendor/tipo. Use SNMP ou Ping + SNMP para classificação automática.">
+                <option value="ping">Ping (ICMP)</option>
+                <option value="snmp" selected>SNMP v2c</option>
+                <option value="both">Ping + SNMP</option>
+            </select>
+            <button class="btn btn-success" id="scan-btn"><i class="fas fa-search"></i> Escanear Rede</button>
+        </div>
+        <div style="color:var(--text-secondary);font-size:0.875rem;" id="scan-range-hint">O SINAPSE escaneia sua rede para encontrar dispositivos compatíveis automaticamente.</div>
+        <div id="scan-results" style="margin-top:1rem;display:none;"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script src="/static/js/devices.js"></script>
+{% endblock %}

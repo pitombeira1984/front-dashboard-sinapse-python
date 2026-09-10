@@ -1,0 +1,71 @@
+# Laboratório de dispositivos SNMP simulados para a Descoberta Automática do
+# SINAPSE (Devices -> Escanear Rede).
+#
+# IMPORTANTE: neste Docker Desktop (Windows, backend WSL2), o IP interno dos
+# containers NÃO é alcançável a partir do Windows (testado: nem no bridge
+# default, nem numa rede custom com IP estático — ping dá timeout). Por isso
+# cada serviço publica a porta 161/udp diretamente num IP que o **host já
+# possui**, em vez de depender do IP do container:
+#
+#   - olt-sim      -> IP real da LAN (o mesmo que o resto da rede enxerga)
+#   - demais       -> IPs de loopback extras (127.0.0.2, 127.0.0.3, ...) — o
+#                     Windows já responde por todo 127.0.0.0/8, então não
+#                     precisa de placa de rede nem `netsh` pra ter "mais um
+#                     host" pra escanear. Só serve pra classificar um vendor
+#                     diferente; não precisa estar exposto à LAN física.
+#
+# Pra adicionar um novo dispositivo simulado (ver README "Descoberta
+# Automática" pra mais detalhes):
+#   1. criar tools/lab/datasets/<nome>/public.snmprec com sysDescr/sysObjectID
+#      do vendor desejado (bate com um VENDOR_PROFILES de app/oids.py, ou cria
+#      um novo lá se for um vendor ainda não mapeado)
+#   2. copiar um bloco de serviço abaixo, trocando DATASET_DIR e o IP (próximo
+#      loopback livre, ex: 127.0.0.3, 127.0.0.4...)
+#
+# Uso:
+#   cd python-server/tools/lab
+#   docker compose up -d --build
+#   docker compose down          # para tudo
+#
+# Community SNMP de todos os datasets é "public" (nome do arquivo .snmprec),
+# batendo com o SNMP_COMMUNITY default do .env.example.
+services:
+  olt-sim:
+    build:
+      context: .
+      args:
+        DATASET_DIR: datasets/olt
+    ports:
+      - "${OLT_SIM_BIND:-192.168.100.26}:161:161/udp"
+
+  mikrotik-sim:
+    build:
+      context: .
+      args:
+        DATASET_DIR: datasets/mikrotik
+    ports:
+      - "${MIKROTIK_SIM_BIND:-127.0.0.2}:161:161/udp"
+
+  zte-sim:
+    build:
+      context: .
+      args:
+        DATASET_DIR: datasets/zte
+    ports:
+      - "${ZTE_SIM_BIND:-127.0.0.3}:161:161/udp"
+
+  nokia-sim:
+    build:
+      context: .
+      args:
+        DATASET_DIR: datasets/nokia
+    ports:
+      - "${NOKIA_SIM_BIND:-127.0.0.4}:161:161/udp"
+
+  onu-generic-sim:
+    build:
+      context: .
+      args:
+        DATASET_DIR: datasets/onu-generic
+    ports:
+      - "${ONU_GENERIC_SIM_BIND:-127.0.0.5}:161:161/udp"
