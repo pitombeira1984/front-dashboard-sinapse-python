@@ -117,7 +117,7 @@ appState = {
     "backups": [],
     "settings": {
         "nodeName": "SINAPSE-Node-01", "timezone": "America/Fortaleza (UTC-3)", "language": "Português (Brasil)",
-        "pollingInterval": "5 minutos", "dataRetention": "6 meses", "advancedMetrics": True,
+        "pollingInterval": "5 segundos", "dataRetention": "6 meses", "advancedMetrics": True,
         "notifyEmail": True, "notifyTelegram": True, "notifySMS": False,
         "email": "ti@provedor.com.br", "ip": "192.168.1.100", "mask": "255.255.255.0",
         "gateway": "192.168.1.1", "dns1": "8.8.8.8", "dns2": "8.8.4.4",

@@ -22,10 +22,10 @@
 <div style="color:var(--text-muted);padding:1.5rem;text-align:center;grid-column:1/-1;">Nenhum dispositivo encontrado.</div>
 {% else %}
 {% for d in devices %}
-{% set rx_color = ('var(--danger-color)' if d.rxPower < -27 else ('var(--warning-color)' if d.rxPower < -24 else 'var(--success-color)')) if d.rxPower is defined else 'var(--text-primary)' %}
+{% set rx_color = optical_color('rxPower', d.rxPower, d.ponMode) %}
 <div class="device-card">
     <div class="device-header">
-        <div class="device-name">{{ d.name }}</div>
+        <div class="device-name">{{ d.name }}{% if d.source == 'real' %} <span class="badge badge-success" style="font-size:0.6rem;padding:0.1rem 0.45rem;vertical-align:middle;" title="Dados lidos do painel web da ONU física">REAL</span>{% endif %}</div>
         <div class="device-status status-{{ d.status }}">
             <i class="fas fa-circle"></i>
             <span>{{ 'Online' if d.status == 'online' else 'Offline' }}</span>
@@ -39,9 +39,9 @@
             <div class="metric"><div class="metric-label">Temp.</div><div class="metric-value">{{ d.temperature if d.temperature is defined else '--' }}°C</div></div>
             <div class="metric"><div class="metric-label">ONUs Ativas</div><div class="metric-value">{{ d.onus_active if d.onus_active is defined else '--' }}/{{ d.onus_total if d.onus_total is defined else '--' }}</div></div>
         {% elif d.type == 'ONU' %}
-            {% set tx_color = ('var(--danger-color)' if (d.txPower < 0.5 or d.txPower > 5) else ('var(--warning-color)' if d.txPower < 1.0 else 'var(--success-color)')) if d.txPower is defined else 'var(--text-primary)' %}
-            {% set sfp_color = ('var(--danger-color)' if d.sfpTemp >= 70 else ('var(--warning-color)' if d.sfpTemp >= 50 else 'var(--success-color)')) if d.sfpTemp is defined else 'var(--text-primary)' %}
-            {% set v_color = ('var(--danger-color)' if (d.sfpVoltage < 3.0 or d.sfpVoltage > 3.6) else ('var(--warning-color)' if (d.sfpVoltage < 3.1 or d.sfpVoltage > 3.5) else 'var(--success-color)')) if d.sfpVoltage is defined else 'var(--text-primary)' %}
+            {% set tx_color = optical_color('txPower', d.txPower, d.ponMode) %}
+            {% set sfp_color = optical_color('temperature', d.sfpTemp, d.ponMode) %}
+            {% set v_color = optical_color('voltage', d.sfpVoltage, d.ponMode) %}
             {% set ber_color = ('var(--danger-color)' if d.ber > 1e-6 else ('var(--warning-color)' if d.ber > 1e-9 else 'var(--success-color)')) if d.ber is defined else 'var(--text-primary)' %}
             <div class="metric"><div class="metric-label">RxPower</div><div class="metric-value" style="color:{{ rx_color }};">{{ (d.rxPower ~ ' dBm') if d.status == 'online' and d.rxPower is defined else '--' }}</div></div>
             <div class="metric"><div class="metric-label">TxPower</div><div class="metric-value" style="color:{{ tx_color }};">{{ (d.txPower ~ ' dBm') if d.status == 'online' and d.txPower is defined else '--' }}</div></div>
@@ -96,7 +96,7 @@
     </td>
     <td>
         {% if d.type == 'ONU' and d.status == 'online' %}
-            {% set rx_color = 'var(--danger-color)' if (d.rxPower or 0) < -27 else ('var(--warning-color)' if (d.rxPower or 0) < -24 else 'var(--success-color)') %}
+            {% set rx_color = optical_color('rxPower', d.rxPower, d.ponMode) %}
             <div style="font-weight:600;color:{{ rx_color }};">{{ (d.rxPower ~ ' dBm') if d.rxPower is not none else '--' }}</div>
             <div style="font-size:0.75rem;color:var(--text-muted);">{{ (d.latency ~ ' ms') if d.latency is not none else '' }}</div>
         {% elif d.type == 'OLT' %}

@@ -16,7 +16,7 @@ function renderDeviceRows(devices) {
 
         let metricsHtml = '<span style="color:var(--text-muted);">--</span>';
         if (d.type === 'ONU' && d.status === 'online') {
-            const rxColor = (d.rxPower ?? 0) < -27 ? 'var(--danger-color)' : (d.rxPower ?? 0) < -24 ? 'var(--warning-color)' : 'var(--success-color)';
+            const rxColor = opticalColor('rxPower', d.rxPower, d.ponMode);
             metricsHtml = `<div style="font-weight:600;color:${rxColor};">${d.rxPower != null ? d.rxPower + ' dBm' : '--'}</div>
                            <div style="font-size:0.75rem;color:var(--text-muted);">${d.latency != null ? d.latency + ' ms' : ''}</div>`;
         } else if (d.type === 'OLT') {
@@ -125,7 +125,7 @@ function viewDeviceMetrics(id) {
                 </div>`).join('')}
            </div>`;
     } else if (d.type === 'ONU') {
-        const rxColor = (d.rxPower ?? 0) < -27 ? 'var(--danger-color)' : (d.rxPower ?? 0) < -24 ? 'var(--warning-color)' : 'var(--success-color)';
+        const rxColor = opticalColor('rxPower', d.rxPower, d.ponMode);
         rows = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
             ${[['RxPower', { val: (d.rxPower ?? '--') + ' dBm', color: rxColor }],
                ['TxPower', { val: (d.txPower ?? '--') + ' dBm', color: '' }],

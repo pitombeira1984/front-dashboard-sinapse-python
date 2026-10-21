@@ -69,8 +69,61 @@ function _updateOnusTrend(onusOnline, onusTotal) {
     }
 }
 
+// ── ONU Real (card fixo, só existe no HTML quando ONU_POLLER_ENABLED=true) ──
+let _onuRealLastAt = null;
+
+function updateOnuRealCard(status) {
+    if (!status || !document.getElementById('onu-real-card')) return;
+    const r = status.lastReading || {};
+    const set = (id, text, color = '') => {
+        const el = document.getElementById(id);
+        if (el) { el.textContent = text; el.style.color = color; }
+    };
+    const fmt = (v, unit, digits = 2) => v == null ? '--' : `${Number(v).toFixed(digits)} ${unit}`;
+
+    const badge = document.getElementById('onu-real-badge');
+    if (badge) {
+        const [cls, label] = status.fresh ? ['badge-success', 'Recebendo dados']
+            : status.lastError ? ['badge-critical', 'Sem resposta']
+            : ['badge-warning', 'Conectando...'];
+        badge.className = `badge ${cls}`;
+        badge.textContent = label;
+    }
+
+    const errEl = document.getElementById('onu-real-error');
+    if (errEl) {
+        errEl.style.display = !status.fresh && status.lastError ? '' : 'none';
+        errEl.innerHTML = status.lastError ? `<i class="fas fa-exclamation-triangle" style="margin-right:0.35rem;"></i>${escHtml(status.lastError)}` : '';
+    }
+
+    const stale = !status.fresh;
+    const muted = stale ? 'var(--text-muted)' : '';
+    // Limites da tecnologia informada pela própria ONU (ex: XGS-PON → ITU-T G.9807.1).
+    const rxColor   = opticalColor('rxPower', r.rxPowerDbm, r.ponMode, '');
+    const txColor   = opticalColor('txPower', r.txPowerDbm, r.ponMode, '');
+    const tempColor = opticalColor('temperature', r.temperatureC, r.ponMode, '');
+    const voltColor = opticalColor('voltage', r.voltageV, r.ponMode, '');
+
+    set('onu-real-pon', [r.ponMode, r.connectStatus].filter(Boolean).join(' • ') || '--', muted);
+    set('onu-real-rx', fmt(r.rxPowerDbm, 'dBm'), muted || rxColor);
+    set('onu-real-tx', fmt(r.txPowerDbm, 'dBm'), muted || txColor);
+    set('onu-real-temp', fmt(r.temperatureC, '°C', 1), muted || tempColor);
+    set('onu-real-volt', fmt(r.voltageV, 'V'), muted || voltColor);
+    set('onu-real-bias', fmt(r.biasCurrentMa, 'mA', 1), muted);
+    set('onu-real-fec', `${r.fecErrors ?? '--'} / ${r.hecErrors ?? '--'}`, muted);
+    set('onu-real-age', status.ageSeconds == null ? 'nenhuma ainda' : `há ${formatDuration(status.ageSeconds)}`, stale && status.ageSeconds != null ? 'var(--danger-color)' : '');
+
+    // Só plota leitura nova — o polling do dashboard (5s) pode ser mais rápido que o do poller.
+    if (status.lastReadingAt && status.lastReadingAt !== _onuRealLastAt) {
+        _onuRealLastAt = status.lastReadingAt;
+        pushOnuRealPoint(status.lastReadingAt, r.rxPowerDbm);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     initLatencyGPONChartEmpty();
+    initOnuRealChartEmpty();
+    if (document.getElementById('onu-real-card')) API.getOnuRealStatus().then(updateOnuRealCard);
 
     const advancedMetrics = window.SINAPSE_SETTINGS?.advancedMetrics ?? true;
 
@@ -85,10 +138,12 @@ document.addEventListener('DOMContentLoaded', function () {
         _updateOnusTrend(data.onusOnline, data.onusTotal);
 
         try {
-            const [onus, olts] = await Promise.all([
+            const [onus, olts, onuReal] = await Promise.all([
                 API.getONUs(AppState.currentGponPort),
                 API.getOLTsBandwidth(),
+                document.getElementById('onu-real-card') ? API.getOnuRealStatus() : null,
             ]);
+            updateOnuRealCard(onuReal);
             const grid = document.getElementById('devices-grid-dashboard');
             if (grid) {
                 const oltDevice = {

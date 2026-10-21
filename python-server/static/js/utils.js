@@ -14,6 +14,27 @@ const MONITORING_PARAM_TYPES = {
     authenticationFailure: { label: 'Falha de Autenticação SNMP', icon: 'fa-shield-alt', hasThreshold: false, defaultSeverity: 'critical', description: 'Dispara quando ocorre falha de autenticação SNMP (via Trap).', dataKey: null },
 };
 
+// ===== LIMITES ÓPTICOS POR TECNOLOGIA PON =====
+// Tabela vem do servidor (app/optical_thresholds.py, via window.SINAPSE_OPTICAL_THRESHOLDS
+// em base.html) — mesma lógica de optical_thresholds.level() no Python.
+function opticalProfile(ponMode) {
+    const table = window.SINAPSE_OPTICAL_THRESHOLDS || {};
+    return (ponMode && ponMode.toUpperCase().includes('XGS') ? table['XGS-PON'] : table['GPON']) || {};
+}
+
+function opticalLevel(metric, value, ponMode) {
+    if (value == null || isNaN(value)) return null;
+    const t = opticalProfile(ponMode)[metric];
+    if (!t) return null;
+    if (value < (t.critLow ?? -Infinity) || value > (t.critHigh ?? Infinity)) return 'crit';
+    if (value < (t.warnLow ?? -Infinity) || value > (t.warnHigh ?? Infinity)) return 'warn';
+    return 'ok';
+}
+
+function opticalColor(metric, value, ponMode, fallback = 'var(--text-primary)') {
+    return { crit: 'var(--danger-color)', warn: 'var(--warning-color)', ok: 'var(--success-color)' }[opticalLevel(metric, value, ponMode)] || fallback;
+}
+
 // Espelha o macro Jinja2 device_cards (templates/partials/macros.html) — usado para
 // re-renderizar o grid de dispositivos do Dashboard a cada ciclo de polling (5s),
 // já que a versão inicial da página é montada pelo servidor mas as atualizações
@@ -21,11 +42,11 @@ const MONITORING_PARAM_TYPES = {
 function renderDeviceCards(devices, advancedMetrics) {
     if (!devices || !devices.length) return `<div style="color:var(--text-muted);padding:1.5rem;text-align:center;grid-column:1/-1;">Nenhum dispositivo encontrado.</div>`;
     return devices.map(d => {
-        const rxColor = d.rxPower !== undefined ? (d.rxPower < -27 ? 'var(--danger-color)' : d.rxPower < -24 ? 'var(--warning-color)' : 'var(--success-color)') : 'var(--text-primary)';
+        const rxColor = opticalColor('rxPower', d.rxPower, d.ponMode);
         return `
         <div class="device-card">
             <div class="device-header">
-                <div class="device-name">${d.name}</div>
+                <div class="device-name">${d.name}${d.source === 'real' ? ' <span class="badge badge-success" style="font-size:0.6rem;padding:0.1rem 0.45rem;vertical-align:middle;" title="Dados lidos do painel web da ONU física">REAL</span>' : ''}</div>
                 <div class="device-status status-${d.status}">
                     <i class="fas fa-circle"></i>
                     <span>${d.status === 'online' ? 'Online' : 'Offline'}</span>
@@ -39,9 +60,9 @@ function renderDeviceCards(devices, advancedMetrics) {
                     <div class="metric"><div class="metric-label">Temp.</div><div class="metric-value">${d.temperature ?? '--'}°C</div></div>
                     <div class="metric"><div class="metric-label">ONUs Ativas</div><div class="metric-value">${d.onus_active ?? '--'}/${d.onus_total ?? '--'}</div></div>
                 ` : d.type === 'ONU' ? (() => {
-                    const txColor  = d.txPower   !== undefined ? (d.txPower < 0.5 || d.txPower > 5 ? 'var(--danger-color)' : d.txPower < 1.0 ? 'var(--warning-color)' : 'var(--success-color)') : 'var(--text-primary)';
-                    const sfpColor = d.sfpTemp   !== undefined ? (d.sfpTemp >= 70 ? 'var(--danger-color)' : d.sfpTemp >= 50 ? 'var(--warning-color)' : 'var(--success-color)') : 'var(--text-primary)';
-                    const vColor   = d.sfpVoltage !== undefined ? (d.sfpVoltage < 3.0 || d.sfpVoltage > 3.6 ? 'var(--danger-color)' : d.sfpVoltage < 3.1 || d.sfpVoltage > 3.5 ? 'var(--warning-color)' : 'var(--success-color)') : 'var(--text-primary)';
+                    const txColor  = opticalColor('txPower', d.txPower, d.ponMode);
+                    const sfpColor = opticalColor('temperature', d.sfpTemp, d.ponMode);
+                    const vColor   = opticalColor('voltage', d.sfpVoltage, d.ponMode);
                     const berColor = d.ber !== undefined ? (d.ber > 1e-6 ? 'var(--danger-color)' : d.ber > 1e-9 ? 'var(--warning-color)' : 'var(--success-color)') : 'var(--text-primary)';
                     const berFmt   = v => v === undefined ? '--' : Number(v).toExponential(2);
                     return `

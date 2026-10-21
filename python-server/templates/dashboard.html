@@ -64,6 +64,35 @@
     </div>
 </section>
 
+{% if onu_real.enabled %}
+<!-- ONU Real: telemetria lida do painel web da ONU física (app/onu_web_poller.py).
+     Fixo, independente da porta GPON selecionada; valores preenchidos por dashboard.js. -->
+<div class="card" id="onu-real-card">
+    <div class="section-header">
+        <h2 class="section-title">
+            <i class="fas fa-satellite-dish" style="color:var(--primary-color);margin-right:0.5rem;"></i>
+            ONU Real — {{ onu_real_profile.apt if onu_real_profile else 'ONU #' ~ onu_real.onuId }}
+            <span style="font-size:0.8rem;font-weight:400;color:var(--text-secondary);margin-left:0.5rem;">
+                {{ onu_real.host }}{{ ' • ' + onu_real_profile.client if onu_real_profile else '' }}
+            </span>
+        </h2>
+        <span class="badge badge-warning" id="onu-real-badge">Conectando...</span>
+    </div>
+    <div class="device-metrics" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));">
+        <div class="metric"><div class="metric-label">Status PON</div><div class="metric-value" id="onu-real-pon">--</div></div>
+        <div class="metric"><div class="metric-label">RxPower</div><div class="metric-value" id="onu-real-rx">--</div></div>
+        <div class="metric"><div class="metric-label">TxPower</div><div class="metric-value" id="onu-real-tx">--</div></div>
+        <div class="metric"><div class="metric-label">Temperatura</div><div class="metric-value" id="onu-real-temp">--</div></div>
+        <div class="metric"><div class="metric-label">Tensão</div><div class="metric-value" id="onu-real-volt">--</div></div>
+        <div class="metric"><div class="metric-label">Corrente Bias</div><div class="metric-value" id="onu-real-bias">--</div></div>
+        <div class="metric"><div class="metric-label">Erros FEC / HEC</div><div class="metric-value" id="onu-real-fec">--</div></div>
+        <div class="metric"><div class="metric-label">Última leitura</div><div class="metric-value" id="onu-real-age" style="font-size:0.9rem;">--</div></div>
+    </div>
+    <div id="onu-real-error" style="display:none;margin-top:1rem;font-size:0.8rem;color:var(--danger-color);"></div>
+    <div style="height:180px;position:relative;margin-top:1rem;"><canvas id="chart-onu-real-rx"></canvas></div>
+</div>
+{% endif %}
+
 <div class="card">
     <div class="section-header">
         <h2 class="section-title">Consumo de Banda por OLT</h2>
@@ -108,5 +137,5 @@
 {% endblock %}
 
 {% block page_script %}
-<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/dashboard.js?v={{ static_version }}"></script>
 {% endblock %}

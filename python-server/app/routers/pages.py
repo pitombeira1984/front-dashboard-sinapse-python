@@ -1,14 +1,22 @@
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 
-from .. import mock_engine, state
+from .. import mock_engine, onu_web_poller, optical_thresholds, state
 from ..snapshot_cache import get_cached_snapshot
 
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+templates.env.globals["optical_color"] = optical_thresholds.color
+templates.env.globals["optical_thresholds"] = optical_thresholds.OPTICAL_THRESHOLDS
+
+# Sufixo ?v= nos /static/*.js|css dos templates: muda a cada start do processo
+# (inclusive a cada reload do `--reload`), forçando o navegador a baixar JS/CSS
+# novos em vez de reaproveitar uma versão antiga do cache.
+_STATIC_VERSION = str(int(time.time()))
 
 
 def _theme(request: Request) -> str:
@@ -22,6 +30,7 @@ def _base_ctx(request: Request, page: str, title: str) -> dict:
         "page_title": title,
         "theme": _theme(request),
         "settings": state.get_settings(),
+        "static_version": _STATIC_VERSION,
     }
 
 
@@ -37,12 +46,15 @@ def dashboard(request: Request):
         "onus_active": snap["gpon"]["onusOnline"], "onus_total": snap["gpon"]["onusTotal"],
     }
     devices = [olt_device] + [{**o, "name": f"ONU — {o['apt']}", "type": "ONU"} for o in onus]
+    onu_real = onu_web_poller.get_status()
     ctx = _base_ctx(request, "dashboard", "Dashboard")
     ctx.update({
         "alerts": state.get_alerts(),
         "devices": devices,
         "advanced_metrics": state.get_settings().get("advancedMetrics", True),
         "current_gpon_port": default_port,
+        "onu_real": onu_real,
+        "onu_real_profile": next((o for o in mock_engine.get_onus() if o["id"] == onu_real["onuId"]), None),
     })
     return templates.TemplateResponse(request, "dashboard.html", ctx)
 

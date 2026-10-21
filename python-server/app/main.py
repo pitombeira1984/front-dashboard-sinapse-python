@@ -6,11 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import trap_engine
+from . import config, onu_web_poller, trap_engine
 from .config import ALLOWED_ORIGINS
 from .routers import (
     alerts, backups, clients, device, devices, history, maintenances,
-    monitoring_params, pages, rules, settings, status, topology, traps,
+    monitoring_params, onu_real, pages, rules, settings, status, topology, traps,
 )
 
 # Resolvidos a partir do arquivo, não do diretório de trabalho do processo —
@@ -59,12 +59,22 @@ app.include_router(maintenances.router)
 app.include_router(history.router)
 app.include_router(backups.router)
 app.include_router(settings.router)
+app.include_router(onu_real.router)
 
 
 @app.on_event("startup")
 def _startup():
     trap_engine.generate_startup_traps()
+    onu_web_poller.start()
     print("")
     print("SINAPSE — Mock SNMP Server (Python/FastAPI)")
     print("Modo: Mock (dados simulados)")
     print("Topografia: 3 OLTs -> 8 Portas -> 18 ONUs")
+    if config.settings.onu_poller_enabled:
+        print(f"ONU real: {config.settings.onu_host} -> ONU id {config.settings.onu_poller_onu_id} "
+              f"(painel web, a cada {config.settings.onu_poller_interval:g}s)")
+
+
+@app.on_event("shutdown")
+def _shutdown():
+    onu_web_poller.stop()

@@ -67,6 +67,31 @@ function pushGPONChartPoints(liveData) {
     }
 }
 
+// ===== RXPOWER DA ONU REAL (linha, um ponto por leitura nova do painel web) =====
+function initOnuRealChartEmpty() {
+    destroyChart('onuRealRx');
+    const canvas = document.getElementById('chart-onu-real-rx');
+    if (!canvas) return;
+    ChartRegistry['onuRealRx'] = new Chart(canvas, {
+        type: 'line',
+        data: { labels: [], datasets: [{ label: 'RxPower real (dBm)', data: [], borderColor: '#0ea5e9', backgroundColor: 'rgba(14,165,233,0.1)', fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 4 }] },
+        options: {
+            ...getChartDefaults(),
+            plugins: { ...getChartDefaults().plugins, tooltip: { ...getChartDefaults().plugins.tooltip, callbacks: { label: ctx => ` RxPower: ${ctx.parsed.y} dBm` } } },
+            scales: { ...getChartDefaults().scales, y: { ...getChartDefaults().scales.y, title: { display: true, text: 'dBm', color: getCssVar('--text-muted') } } },
+        },
+    });
+}
+
+function pushOnuRealPoint(timestampSec, rxPower) {
+    const chart = ChartRegistry['onuRealRx'];
+    if (!chart || rxPower == null) return;
+    chart.data.labels.push(new Date(timestampSec * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    chart.data.datasets[0].data.push(rxPower);
+    if (chart.data.labels.length > 60) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+    chart.update('none');
+}
+
 // ===== CONSUMO DE BANDA POR OLT (barras) =====
 function renderOLTBandwidthChart(olts) {
     destroyChart('oltBandwidth');

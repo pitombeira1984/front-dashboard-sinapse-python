@@ -13,6 +13,7 @@
 import random
 import time
 
+from . import optical_thresholds
 from .formatting import now_str_seconds
 
 TRAP_TYPES = {
@@ -210,13 +211,16 @@ def evaluate_traps(snapshot: dict) -> None:
 
         if curr_status == "online":
             prev_alarm = flags["onuOptical"].get(onu["id"], False)
-            is_alarm = onu["rxPower"] < -24
+            rx_level = optical_thresholds.level("rxPower", onu["rxPower"], onu.get("ponMode"))
+            is_alarm = rx_level in ("warn", "crit")
             if is_alarm and not prev_alarm:
                 make_trap("opticalDegradation", f"ONU — {onu['apt']}", {
                     "hwGponOntRxPower": round(onu["rxPower"] * 100),
                     "rxPowerDbm": onu["rxPower"],
-                    "thresholdMin": -24,
-                    "opticalStatus": "critical" if onu["rxPower"] < -27 else "degraded",
+                    "thresholdMin": optical_thresholds.OPTICAL_THRESHOLDS[
+                        optical_thresholds.profile_name(onu.get("ponMode"))]["rxPower"]["warnLow"],
+                    "opticalStatus": "critical" if rx_level == "crit" else "degraded",
+                    "ponMode": onu.get("ponMode"),
                     "onuSerial": onu["serial"],
                     "onuClient": onu["client"],
                     "onuIp": onu["ip"],

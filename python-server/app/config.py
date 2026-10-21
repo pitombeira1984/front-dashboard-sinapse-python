@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     onu_host: str = "192.168.100.1"
     onu_username: str = ""
     onu_password: str = ""
+    onu_poller_enabled: bool = False
+    onu_poller_onu_id: int = 1
+    onu_poller_interval: float = 10.0
 
     snmp_community: str = "public"
     snmp_timeout: float = 1.5

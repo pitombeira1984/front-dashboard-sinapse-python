@@ -4,6 +4,7 @@ import random
 import time
 from datetime import datetime, timezone
 
+from . import onu_web_poller, optical_thresholds
 from .formatting import now_str_minutes, uptime_to_string
 
 
@@ -161,12 +162,56 @@ def _push(arr: list, val, limit: int = 120):
         arr.pop(0)
 
 
+def _is_degraded(onu: dict) -> bool:
+    return optical_thresholds.level("rxPower", onu["rxPower"], onu.get("ponMode")) in ("warn", "crit")
+
+
+def _apply_real_reading(onu: dict, real: dict) -> bool:
+    """ONU coberta pelo onu_web_poller: valores reais no lugar da simulação.
+    Sem leitura recente (painel inacessível), a ONU é tratada como offline — o que
+    dispara o mesmo alerta automático/trap de uma queda simulada.
+
+    TODO: validar com respostas reais quais valores de `connectStatus` indicam link
+    PON operacional (ex: estado O5) e usá-lo no lugar de "tem RxPower = online"."""
+    from . import state as app_state
+
+    reading = real["reading"]
+    is_online = real["fresh"] and reading.get("rxPowerDbm") is not None
+    if is_online != (onu["status"] == "online"):
+        onu["status"] = "online" if is_online else "offline"
+        onu["lastSeen"] = now_str_minutes()
+        app_state.trigger_auto_alert("onuOnline" if is_online else "onuOffline", onu)
+    if not is_online:
+        return False
+
+    onu["rxPower"] = round(reading["rxPowerDbm"], 2)
+    if reading.get("txPowerDbm") is not None:
+        onu["txPower"] = round(reading["txPowerDbm"], 2)
+    if reading.get("temperatureC") is not None:
+        onu["sfpTemp"] = round(reading["temperatureC"], 1)
+    if reading.get("voltageV") is not None:
+        onu["sfpVoltage"] = round(reading["voltageV"], 3)
+    # O painel não informa latência nem BER — seguem simulados até haver fonte real.
+    onu["latency"] = round(clamp(jitter(5 + onu["distance"] * 3, 1.5), 2, 80), 1)
+    if reading.get("ponMode"):
+        onu["ponMode"] = reading["ponMode"]
+    onu["degraded"] = _is_degraded(onu)
+    _push(onu["history"]["rxPower"], onu["rxPower"])
+    _push(onu["history"]["latency"], onu["latency"])
+    return True
+
+
 def _tick_onus(elapsed: float) -> int:
     from . import state as app_state
 
     online_count = 0
     for onu in onu_state:
         onu["uptimeTicks"] += int(elapsed * 100)
+
+        real = onu_web_poller.get_live_reading(onu["id"])
+        if real is not None:
+            online_count += _apply_real_reading(onu, real)
+            continue
 
         if onu["offlineTimer"] > 0:
             onu["offlineTimer"] -= elapsed
@@ -203,7 +248,7 @@ def _tick_onus(elapsed: float) -> int:
             ber_spike = (random.random() * 1e-7) if random.random() < 0.04 else 0
             onu["ber"] = float(f"{max(0, drift(onu['ber'], 1e-11 + ber_spike, 0.1, 5e-12)):.2e}")
             onu["latency"] = round(clamp(jitter(5 + onu["distance"] * 3, 1.5), 2, 80), 1)
-            onu["degraded"] = onu["rxPower"] < -24
+            onu["degraded"] = _is_degraded(onu)
             _push(onu["history"]["rxPower"], onu["rxPower"])
             _push(onu["history"]["latency"], onu["latency"])
 
@@ -280,6 +325,7 @@ def tick() -> dict:
             dev["ber"] = onu["ber"]
             dev["latency"] = onu["latency"]
             dev["uptime"] = uptime_to_string(onu["uptimeTicks"])
+            dev["ponMode"] = onu.get("ponMode", "GPON")
 
     return {
         "cpuNow": cpu_now, "inRate": in_rate, "outRate": out_rate,
@@ -310,6 +356,8 @@ def _onu_public(o: dict) -> dict:
         "sfpVoltage": o["sfpVoltage"], "ber": o["ber"], "latency": o["latency"],
         "distance": f"{o['distance']} km", "uptime": uptime_to_string(o["uptimeTicks"]),
         "degraded": o["degraded"], "lastSeen": o["lastSeen"],
+        "source": "real" if onu_web_poller.covers(o["id"]) else "mock",
+        "ponMode": o.get("ponMode", "GPON"),
     }
 
 
@@ -370,7 +418,7 @@ def get_history() -> dict:
         "traffic": list(snmp_state["history"]["traffic"]),
         "onusOnline": list(snmp_state["history"]["onusOnline"]),
         "onuRxHistory": [{"id": o["id"], "apt": o["apt"], "client": o["client"], "current": o["rxPower"],
-                           "history": list(o["history"]["rxPower"])} for o in onu_state],
+                           "ponMode": o.get("ponMode", "GPON"), "history": list(o["history"]["rxPower"])} for o in onu_state],
     }
 
 

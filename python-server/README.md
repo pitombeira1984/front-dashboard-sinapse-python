@@ -20,15 +20,19 @@ pip install -r requirements.txt
 ## Rodando localmente
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8080
 ```
 
-Abre em `http://127.0.0.1:8000`. `--reload` reinicia o processo a cada alteração de arquivo — útil em desenvolvimento, mas também **reseta todo o estado em memória** (dispositivos, alertas, histórico etc. voltam aos valores iniciais), já que não há banco de dados.
+Abre em `http://127.0.0.1:8080`. A porta padrão do uvicorn (8000) não é usada porque o Windows costuma reservá-la (faixa excluída pelo Hyper-V/WSL — confira com `netsh interface ipv4 show excludedportrange protocol=tcp`), o que gera `WinError 10013` ao subir o servidor. `--reload` reinicia o processo a cada alteração de arquivo — útil em desenvolvimento, mas também **reseta todo o estado em memória** (dispositivos, alertas, histórico etc. voltam aos valores iniciais), já que não há banco de dados.
+
+> **Atenção (Windows):** em alguns ambientes o `--reload` detecta a alteração mas o processo antigo continua respondendo com o código velho (processos `multiprocessing spawn` órfãos acumulam). Se uma mudança não aparecer, encerre todos os processos `python`/`uvicorn` do servidor e suba de novo **sem** `--reload` (comando abaixo).
+
+JS e CSS são servidos com sufixo `?v=<versão>` (`static_version` em `app/routers/pages.py`), que muda a cada start do processo — o navegador sempre baixa a versão nova após um restart, sem precisar de Ctrl+F5.
 
 Para simular produção (sem reload):
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
 ## Variáveis de ambiente
@@ -40,6 +44,10 @@ ONU_HOST=192.168.100.1
 ONU_USERNAME=
 ONU_PASSWORD=
 
+ONU_POLLER_ENABLED=false
+ONU_POLLER_ONU_ID=1
+ONU_POLLER_INTERVAL=10
+
 SNMP_COMMUNITY=public
 SNMP_TIMEOUT=1.5
 SNMP_RETRIES=0
@@ -47,7 +55,8 @@ SCAN_MAX_WORKERS=40
 SCAN_MAX_HOSTS=1024
 ```
 
-- `ONU_*` — usadas só pelo script de diagnóstico `tools/onu_real_test.py` (não pelo servidor principal, que sempre roda em modo mock).
+- `ONU_HOST`/`ONU_USERNAME`/`ONU_PASSWORD` — acesso ao painel web da ONU real, usados pelo poller do servidor e pelo script `tools/onu_real_test.py`.
+- `ONU_POLLER_*` — integração da ONU real ao Dashboard (ver [ONU real no Dashboard](#onu-real-no-dashboard)). `ONU_POLLER_ENABLED=false` (padrão) mantém o servidor 100% simulado; `ONU_POLLER_ONU_ID` escolhe qual ONU simulada (1–18, `mock_engine.ONU_PROFILES`) passa a receber os valores reais; `ONU_POLLER_INTERVAL` é o intervalo de leitura em segundos.
 - `SNMP_*`/`SCAN_*` — usadas pelo servidor principal na Descoberta Automática (`POST /api/devices/scan`, ver seção abaixo).
 
 `PORT` também pode ser definida (usada só quando o processo é iniciado via `railway.toml`/Nixpacks em produção; localmente, passe `--port` direto para o uvicorn).
@@ -66,6 +75,8 @@ python-server/
 │   ├── snapshot_cache.py         # cache de 2s do snapshot (evita recomputar por sub-rota)
 │   ├── oids.py                   # OIDs SNMP + VENDOR_PROFILES (fingerprint de vendor)
 │   ├── discovery.py              # scan real de rede + fingerprint SNMP (Descoberta Automática)
+│   ├── onu_web_poller.py         # poller da ONU real via painel web (/boaform), thread de fundo
+│   ├── optical_thresholds.py     # limites ópticos por tecnologia PON (GPON, XGS-PON)
 │   ├── formatting.py             # datas pt-BR, uptime
 │   ├── responses.py              # helper do envelope {"ok": true, ...}
 │   └── routers/                  # um arquivo por área da API + páginas (ver lista abaixo)
@@ -75,7 +86,7 @@ python-server/
 │   └── js/                       # polling, gráficos (Chart.js), modais + análise preditiva
 │   │                              #   (regressão linear em utils.js/analysis.js, ver seção abaixo)
 ├── tools/
-│   ├── onu_real_test.py          # diagnóstico de ONU real via login web
+│   ├── onu_real_test.py          # diagnóstico de ONU real via login web (reusa app/onu_web_poller.py)
 │   ├── snmp_test.py              # diagnóstico SNMP (community strings/versões)
 │   └── lab/                      # dispositivos SNMP simulados (Docker) p/ Descoberta Automática
 │       ├── Dockerfile            #   imagem genérica snmpsim-lextudio, dataset via build arg
@@ -84,9 +95,10 @@ python-server/
 │       │                          #   zte, nokia, onu-generic)
 │       └── run_olt_sim.py        #   alternativa sem Docker (host direto, ver seção abaixo)
 ├── requirements.txt
-├── .env.example
-└── railway.toml                  # referência — o railway.toml real fica na raiz do repo
+└── .env.example
 ```
+
+O `railway.toml` do deploy fica na raiz do repositório (ver [Deploy](#deploy)).
 
 ## Páginas (Jinja2)
 
@@ -111,6 +123,9 @@ Todas as respostas seguem o envelope `{"ok": true/false, ...}`. Prefixo `/api`.
 
 **Topologia GPON**
 `GET /topology` · `GET /onus` · `GET /onus/{id}` · `GET /gpon/ports` · `GET /gpon/kpis` · `GET /olts` · `POST /olts` · `GET /olts/bandwidth`
+
+**ONU real**
+`GET /onu-real/status` (estado do poller: última leitura, último erro, `fresh`, `ageSeconds` — nunca expõe a senha)
 
 **Clientes**
 `GET /clients` · `GET /clients/{id}`
@@ -229,6 +244,43 @@ lab-venv\.venv\Scripts\python.exe lab\run_olt_sim.py 192.168.100.26:161   # IP r
 
 `tools/snmp_test.py` (venv **principal**) sempre usa a porta 161 fixa — então para validar suba o simulador já na porta real (`run_olt_sim.py <ip>:161`; portas <1024 não exigem admin no Windows para bind UDP) e rode `python tools/snmp_test.py <ip> public` antes de testar pela UI. O endpoint default `127.0.0.1:1161` só serve para um teste rápido sem precisar de porta 161 livre.
 
+## ONU real no Dashboard
+
+A ONU física do laboratório não expõe SNMP; os dados vêm do **painel web** dela (servidor embarcado Boa, `/boaform`). `app/onu_web_poller.py` roda numa thread de fundo, iniciada junto com o servidor quando `ONU_POLLER_ENABLED=true`:
+
+1. `POST http://<ONU_HOST>/boaform/admin/formLogin` com `ONU_USERNAME`/`ONU_PASSWORD`. A resposta é checada contra os marcadores de erro do próprio painel (`PW_OR_NAME_FALSE`, `LOGINED_ERROR_3`, `ANOTHER_USER_LOGINED`, `DEFAULT_PASSWD`...). O painel não usa cookie de sessão — libera o acesso pelo IP de origem.
+2. A cada `ONU_POLLER_INTERVAL` segundos, `GET /boaform/getASPdata/ponGetStatus`, cuja resposta `pon_info=chave=valor&...` é convertida em modo PON, estado do link, RxPower/TxPower, temperatura, tensão, corrente bias, erros FEC/HEC e bytes.
+3. Se a sessão expirar (resposta sem `pon_info=`), refaz o login no mesmo ciclo. Se o **login** falhar, espera 5 min antes de tentar de novo, para não disparar o bloqueio por tentativas do equipamento.
+
+Integração com o restante do sistema:
+
+- **Simulação** (`mock_engine._apply_real_reading`): a ONU de `ONU_POLLER_ONU_ID` deixa de ser simulada e recebe RxPower, TxPower, temperatura, tensão e `ponMode` reais. Latência e BER continuam simulados (o painel não os informa). Sem leitura bem-sucedida há mais de 3 intervalos, a ONU vira **offline** — gerando o mesmo alerta automático, trap `linkDown` e registro no histórico de uma queda simulada (e `linkUp` + alerta resolvido quando volta). Até a primeira tentativa terminar, a ONU segue simulada, para não gerar um "ONU Offline" falso no boot.
+- **Dashboard**: card fixo **"ONU Real"** abaixo dos KPIs (independente da porta GPON selecionada), com todas as medições, selo de conexão (*Recebendo dados* / *Conectando...* / *Sem resposta* + mensagem de erro) e gráfico do RxPower real (um ponto por leitura nova, até 60). Só é renderizado quando o poller está habilitado.
+- **Cards e tabela de dispositivos**: a ONU ganha o selo **REAL** e o campo `source: "real"` na API (`"mock"` nas demais).
+
+Para usar:
+
+```bash
+# python-server/.env
+ONU_POLLER_ENABLED=true
+ONU_POLLER_ONU_ID=1
+```
+
+Suba o servidor e confira `GET /api/onu-real/status`. Limitações: uma ONU real por vez; **um único processo/worker** (cada worker faria seu próprio login e o painel pode recusar com "outro usuário já está logado"); os valores só avançam no resto do sistema enquanto alguma página com polling (Dashboard ou Dispositivos) estiver aberta, pois o `tick()` da simulação é disparado por request. Em produção (Railway) mantenha desligado — a ONU está na LAN local e não é alcançável da nuvem.
+
+### Limites ópticos por tecnologia PON
+
+`app/optical_thresholds.py` é a **fonte única** dos limites usados para avaliar cada ONU: estado `degraded` (`mock_engine`), traps `opticalDegradation` por ONU (`trap_engine`) e as cores da UI — exposto aos templates pela global Jinja `optical_color()` e ao navegador como `window.SINAPSE_OPTICAL_THRESHOLDS` (consumido por `opticalColor()`/`opticalProfile()` em `utils.js`, usados no Dashboard, em Dispositivos e na Análise). O perfil é escolhido pelo `ponMode` da ONU (`"XGS-PON"` informado pela ONU real; `"GPON"` nas simuladas).
+
+| Grandeza | GPON (ITU-T G.984.2 B+) | XGS-PON (ITU-T G.9807.1 N1) |
+|---|---|---|
+| RxPower (dBm) | aviso < −24 · crítico < −27 ou > −8 | aviso < −25 ou > −10 · crítico < −28 ou > −9 |
+| TxPower (dBm) | aviso < 1,0 · crítico < 0,5 ou > 5,0 | aviso < 4,5 ou > 8,5 · crítico < 4,0 ou > 9,0 |
+| Temperatura (°C) | aviso > 50 · crítico > 70 | aviso > 80 · crítico > 90 |
+| Tensão (V) | aviso fora de 3,1–3,5 · crítico fora de 3,0–3,6 | idem |
+
+Os limites de temperatura do XGS-PON são valores típicos de alarme de fabricante para o DDM do módulo óptico (ONTs XGS-PON operam normalmente na faixa de 60–75 °C) — confirme no datasheet do equipamento. Os KPIs agregados do Dashboard e os Parâmetros de Monitoramento (configuráveis pelo operador em `/alerts`) **não** usam esta tabela.
+
 ## Scripts de diagnóstico
 
 Standalone, não integrados nas rotas HTTP — usados só para investigar hardware real:
@@ -240,7 +292,7 @@ python tools/onu_real_test.py [--watch]
 
 ### `onu_real_test.py` — leitura da ONU real
 
-Faz login em `http://<ONU_HOST>/boaform/admin/formLogin` com as credenciais do `.env` e consulta `/boaform/getASPdata/ponGetStatus`. Esse equipamento não usa SNMP (não exposto ao cliente) nem cookie de sessão — o painel controla acesso pelo IP de origem, então o script só verifica ausência de marcadores de erro conhecidos na resposta.
+Faz login em `http://<ONU_HOST>/boaform/admin/formLogin` com as credenciais do `.env` e consulta `/boaform/getASPdata/ponGetStatus`. Esse equipamento não usa SNMP (não exposto ao cliente) nem cookie de sessão — o painel controla acesso pelo IP de origem, então o script só verifica ausência de marcadores de erro conhecidos na resposta. Usa as mesmas funções de login/leitura do poller do servidor (`app/onu_web_poller.py`). Se o servidor estiver rodando com o poller ligado, evite rodar o script ao mesmo tempo (dois logins simultâneos no painel).
 
 Rode a partir de `python-server/` com o venv já criado (ver Instalação) e `ONU_HOST`/`ONU_USERNAME`/`ONU_PASSWORD` preenchidos no `.env`:
 
@@ -256,11 +308,11 @@ Com o venv ativado (`.venv\Scripts\Activate.ps1`), pode-se usar só `python` no 
 
 ## Análise preditiva (client-side)
 
-A página `/analysis` calcula tendências e projeta prazos direto no navegador — não há endpoint de previsão no backend, o FastAPI só fornece o histórico bruto (`GET /api/history`, `GET /api/olts/bandwidth`, `GET /api/alerts`).
+A página `/analysis` calcula tendências e projeta prazos direto no navegador — não há endpoint de previsão no backend, o FastAPI só fornece o histórico bruto (`GET /api/device/history`, `GET /api/olts/bandwidth`, `GET /api/alerts/all`).
 
 - **`static/js/utils.js`** — `linearRegression(values)`: regressão linear simples por mínimos quadrados, usando o índice da amostra como eixo X (assume amostras igualmente espaçadas no tempo). Retorna `{ slope, intercept, r2 }`.
 - **`static/js/analysis.js`** — `runPredictiveAnalysis()`: chama `linearRegression()` para três séries, cada uma com seu próprio limiar de "confiança" (`r2` mínimo) e inclinação (`slope` mínima) para virar uma predição:
-  - **RxPower por ONU** (`history.onuRxHistory`): alerta se a tendência é de queda (`slope < -0.003`, `r2 ≥ 0.35`) e projeta quando o sinal cruza -24 dBm (warning) ou -27 dBm (critical).
+  - **RxPower por ONU** (`history.onuRxHistory`): alerta se a tendência é de queda (`slope < -0.003`, `r2 ≥ 0.35`) e projeta quando o sinal cruza o limite de aviso ou o crítico da tecnologia da ONU (GPON: -24/-27 dBm; XGS-PON: -25/-28 dBm — ver [Limites ópticos](#limites-ópticos-por-tecnologia-pon)).
   - **Tráfego de entrada da OLT-01** (`history.traffic`): alerta se está em crescimento (`slope > 0.01`, `r2 ≥ 0.3`) e projeta quando atinge 85% da capacidade da OLT.
   - **Latência média da rede** (`history.latency`): alerta se está em alta (`slope > 0.002`, `r2 ≥ 0.3`) e projeta quando atinge o limiar padrão (`MONITORING_PARAM_TYPES.latencyHigh`).
 
@@ -268,7 +320,9 @@ A página `/analysis` calcula tendências e projeta prazos direto no navegador �
 
 ## Estado e persistência
 
-Não há banco de dados: todo o estado (dispositivos, alertas, histórico, backups, parâmetros de monitoramento, manutenções, configurações) vive em memória no processo e **se perde a cada restart** — mesmo comportamento do protótipo original em Node. A simulação da topologia GPON (`mock_engine.py`) avança em tempo real a cada request (`tick()` baseado no tempo decorrido desde a última chamada), não em um timer fixo de fundo.
+Não há banco de dados: todo o estado (dispositivos, alertas, histórico, backups, parâmetros de monitoramento, manutenções, configurações) vive em memória no processo e **se perde a cada restart** — mesmo comportamento do protótipo original em Node. A simulação da topologia GPON (`mock_engine.py`) avança em tempo real a cada request (`tick()` baseado no tempo decorrido desde a última chamada), não em um timer fixo de fundo. A única exceção é o poller da ONU real, que roda numa thread própria; mesmo assim, a leitura só é aplicada à ONU mapeada no próximo `tick()`.
+
+O intervalo de polling do frontend vem de Configurações → Monitoramento (padrão **5 segundos**) e controla a atualização do Dashboard, de Dispositivos e dos SNMP Traps.
 
 ## Deploy
 

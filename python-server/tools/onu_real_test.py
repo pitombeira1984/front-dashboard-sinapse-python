@@ -18,92 +18,25 @@ Uso:
   python tools/onu_real_test.py          # uma consulta
   python tools/onu_real_test.py --watch  # consulta a cada 5s (Ctrl+C pra sair)
 """
-import re
 import sys
 import time
 from datetime import datetime
 
-import requests
-
 sys.path.insert(0, __file__.rsplit("tools", 1)[0])
 from app.config import settings  # noqa: E402
+from app.onu_web_poller import get_pon_status, login as _login  # noqa: E402
 
 HOST = settings.onu_host
 USERNAME = settings.onu_username
 PASSWORD = settings.onu_password
 WATCH = "--watch" in sys.argv
 
-# Marcadores que o próprio JS do painel (Login_control.js) trata como falha.
-# Qualquer resposta que não contenha nenhum desses é tratada como sucesso.
-LOGIN_ERRORS = {
-    "PW_OR_NAME_FALSE": "Usuário ou senha incorretos",
-    "LOGINED_ERROR_3": "Bloqueado temporariamente por tentativas incorretas",
-    "ANOTHER_USER_LOGINED": "Outro usuário já está logado",
-    "ADMINISTRATOR_ONLY": "Acesso restrito a administrador",
-    "DEFAULT_ERROR": "Erro desconhecido de login",
-    "DEFAULT_PASSWD": "Senha padrão de fábrica ainda ativa (o equipamento exige troca)",
-}
 
-
-def login() -> requests.cookies.RequestsCookieJar:
-    res = requests.post(
-        f"http://{HOST}/boaform/admin/formLogin",
-        data={"username": USERNAME, "password": PASSWORD},
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=10,
-    )
-    text = res.text
-
-    for marker, message in LOGIN_ERRORS.items():
-        if marker in text:
-            raise RuntimeError(f'Login falhou: {message} (resposta: "{text.strip()}")')
-
-    if res.cookies:
-        return res.cookies
-
-    print("  (sem cookie de sessão — equipamento parece controlar acesso por IP de origem)")
-    return res.cookies
-
-
-def parse_pon_info(raw: str) -> dict:
-    eq_idx = raw.find("=")
-    payload = raw if eq_idx == -1 else raw[eq_idx + 1:]
-
-    fields = {}
-    for pair in payload.split("&"):
-        if not pair or "=" not in pair:
-            continue
-        key, value = pair.split("=", 1)
-        fields[key] = value
-
-    def num(key):
-        match = re.search(r"-?[\d.]+", fields.get(key, "")) if fields.get(key) else None
-        return float(match.group(0)) if match else None
-
-    return {
-        "ponMode": fields.get("pon_mode"),
-        "connectStatus": fields.get("pon_connect_status"),
-        "fecUpstream": fields.get("pon-fec-us-state"),
-        "fecDownstream": fields.get("pon-fec-ds-state"),
-        "fecErrors": num("fec-errors"),
-        "hecErrors": num("hec-errors"),
-        "packetsDropped": num("packets-dropped"),
-        "temperatureC": num("temperature"),
-        "voltageV": num("voltage"),
-        "txPowerDbm": num("tx-power"),
-        "rxPowerDbm": num("rx-power"),
-        "biasCurrentMa": num("bias-current"),
-        "bytesSent": num("bytes-sent"),
-        "bytesReceived": num("bytes-received"),
-    }
-
-
-def get_pon_status(cookies) -> dict:
-    res = requests.get(f"http://{HOST}/boaform/getASPdata/ponGetStatus", cookies=cookies, timeout=10)
-    text = res.text
-    if "pon_info=" not in text:
-        raise RuntimeError(f'Resposta inesperada (provavelmente não autenticado): "{text.strip()[:200]}"')
-    return parse_pon_info(text)
+def login():
+    cookies = _login(HOST, USERNAME, PASSWORD)
+    if not cookies:
+        print("  (sem cookie de sessão — equipamento parece controlar acesso por IP de origem)")
+    return cookies
 
 
 def print_status(status: dict) -> None:
@@ -123,7 +56,7 @@ def main() -> int:
     try:
         cookies = login()
         print("Login OK.")
-        status = get_pon_status(cookies)
+        status = get_pon_status(HOST, cookies)
         print_status(status)
     except Exception as err:  # diagnóstico interativo: qualquer falha é reportada e encerra
         print(f"Erro: {err}", file=sys.stderr)
@@ -137,7 +70,7 @@ def main() -> int:
         while True:
             time.sleep(5)
             try:
-                print_status(get_pon_status(cookies))
+                print_status(get_pon_status(HOST, cookies))
             except Exception as err:
                 print(f"Erro na consulta: {err}", file=sys.stderr)
     except KeyboardInterrupt:

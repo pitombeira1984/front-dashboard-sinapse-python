@@ -197,15 +197,16 @@ async function runPredictiveAnalysis(showResultModal = false) {
         const { slope, r2 } = linearRegression(samples);
         if (slope >= -0.003 || r2 < 0.35) return;
         const current = onu.current;
-        if (current <= -27) return;
-        const threshold = current > -24 ? -24 : -27;
+        const rx = opticalProfile(onu.ponMode).rxPower || { warnLow: -24, critLow: -27 };
+        if (current <= rx.critLow) return;
+        const threshold = current > rx.warnLow ? rx.warnLow : rx.critLow;
         const samplesToThreshold = (threshold - current) / slope;
         if (!isFinite(samplesToThreshold) || samplesToThreshold <= 0) return;
         const seconds = samplesToThreshold * SAMPLE_INTERVAL_SEC;
         if (seconds > 90 * 86400) return;
 
         predictions.push({
-            id: `onu-${onu.id}`, kind: 'optical', severity: threshold === -27 ? 'critical' : 'warning',
+            id: `onu-${onu.id}`, kind: 'optical', severity: threshold === rx.critLow ? 'critical' : 'warning',
             title: `Degradação Óptica em ONU — ${onu.apt}`,
             detail: `${onu.client} • RxPower atual: ${current.toFixed(2)} dBm • Tendência: ${(slope * 10).toFixed(3)} dB/10 ciclos`,
             etaLabel: formatDuration(seconds), confidence: Math.round(Math.min(97, Math.max(35, r2 * 100))),

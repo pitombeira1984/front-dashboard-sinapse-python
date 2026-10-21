@@ -62,6 +62,7 @@ const API = {
     async getONUs(port)          { const qs = port ? `?port=${encodeURIComponent(port)}` : ''; return this._request(`/api/onus${qs}`); },
     async getGponPorts()         { return this._request('/api/gpon/ports'); },
     async getOLTsBandwidth()     { return this._request('/api/olts/bandwidth'); },
+    async getOnuRealStatus()     { return this._request('/api/onu-real/status'); },
 
     // ── Clientes ───────────────────────────────────────────────────────────
     async getClient(id) { return this._request(`/api/clients/${id}`); },
