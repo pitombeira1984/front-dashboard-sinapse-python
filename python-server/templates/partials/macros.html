@@ -72,7 +72,7 @@
 <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">Nenhum dispositivo encontrado.</td></tr>
 {% else %}
 {% for d in devices %}
-{% set type_badge = 'badge-warning' if d.type == 'OLT' else ('badge-success' if d.type in ['ONU', 'Router'] else 'badge-critical') %}
+{% set type_badge = 'badge-warning' if d.type == 'OLT' else ('badge-success' if d.type in ['ONU', 'Router', 'Server', 'Switch'] else 'badge-critical') %}
 <tr data-device-id="{{ d.id }}">
     <td>
         <div style="font-weight:600;">{{ d.name }}</div>
@@ -99,6 +99,11 @@
             {% set rx_color = optical_color('rxPower', d.rxPower, d.ponMode) %}
             <div style="font-weight:600;color:{{ rx_color }};">{{ (d.rxPower ~ ' dBm') if d.rxPower is not none else '--' }}</div>
             <div style="font-size:0.75rem;color:var(--text-muted);">{{ (d.latency ~ ' ms') if d.latency is not none else '' }}</div>
+        {% elif d.snmpStatus %}
+            {# Versão simples; devices.js re-renderiza a célula completa logo após o carregamento #}
+            {% if d.snmpStatus.fresh %}<div style="font-size:0.85rem;">{{ 'CPU %s%%' % d.cpu if d.cpu is not none else 'Respondendo SNMP' }}{{ ' · Mem %s%%' % d.memory if d.memory is not none else '' }}</div>
+            {% elif d.snmpStatus.ok is none %}<span style="font-size:0.8rem;color:var(--text-muted);">Aguardando 1ª leitura SNMP</span>
+            {% else %}<div style="color:var(--danger-color);font-size:0.8rem;font-weight:600;">Sem resposta SNMP</div>{% endif %}
         {% elif d.type == 'OLT' %}
             {% set cpu_color = 'var(--danger-color)' if (d.cpu or 0) > 80 else ('var(--warning-color)' if (d.cpu or 0) > 60 else 'var(--text-primary)') %}
             <div style="color:{{ cpu_color }};">CPU: {{ d.cpu if d.cpu is defined else '--' }}%</div>

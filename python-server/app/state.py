@@ -174,6 +174,27 @@ def trigger_auto_alert(event_type: str, onu: dict) -> None:
         ]
 
 
+def raise_device_alert(title: str, description: str, device: str | None, severity: str = "critical") -> None:
+    """Alerta automático genérico (ex: poller SNMP) — não duplica enquanto houver um
+    alerta ativo com o mesmo título."""
+    if any(a["title"] == title and a["severity"] != "resolved" for a in appState["alerts"]):
+        return
+    add_alert({"title": title, "description": description, "severity": severity,
+               "device": device or "Rede", "source": "auto"})
+
+
+def resolve_device_alert(title: str, device: str | None, action: str) -> None:
+    if not any(a["title"] == title and a["severity"] != "resolved" for a in appState["alerts"]):
+        return
+    add_history({"event": f"Alerta Resolvido Automaticamente — {title}", "device": device or "Rede",
+                 "duration": "--", "action": action, "user": "Sistema", "type": "alert"})
+    appState["alerts"] = [
+        {**a, "severity": "resolved", "resolvedAt": now_str_minutes()}
+        if a["title"] == title and a["severity"] != "resolved" else a
+        for a in appState["alerts"]
+    ]
+
+
 # ── CRUD Dispositivos ─────────────────────────────────────────────────────────
 def get_devices() -> list:
     return appState["devices"]

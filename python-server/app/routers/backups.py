@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from .. import state
+from .. import snmp_poller, state
 from ..responses import ok
 
 router = APIRouter()
@@ -8,7 +8,9 @@ router = APIRouter()
 
 @router.get("/api/backups")
 def list_backups():
-    return ok(data=state.get_backups())
+    # Snapshots incluem os dispositivos — esconde a community SNMP deles também.
+    return ok(data=[{**b, "devices": [snmp_poller.public_device(d) for d in b["devices"]]}
+                    for b in state.get_backups()])
 
 
 @router.post("/api/backups")

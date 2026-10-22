@@ -5,6 +5,7 @@ OIDs = {
     # RFC 1213 - MIB-II (padrão universal)
     "system": {
         "sysDescr": "1.3.6.1.2.1.1.1.0",
+        "sysObjectID": "1.3.6.1.2.1.1.2.0",
         "sysUpTime": "1.3.6.1.2.1.1.3.0",
         "sysContact": "1.3.6.1.2.1.1.4.0",
         "sysName": "1.3.6.1.2.1.1.5.0",
@@ -22,6 +23,11 @@ OIDs = {
         "ifOutOctets": "1.3.6.1.2.1.2.2.1.16",
         "ifInErrors": "1.3.6.1.2.1.2.2.1.14",
         "ifOutErrors": "1.3.6.1.2.1.2.2.1.20",
+        # IF-MIB ifXTable — nome curto, contadores de 64 bits e velocidade em Mbps
+        "ifName": "1.3.6.1.2.1.31.1.1.1.1",
+        "ifHCInOctets": "1.3.6.1.2.1.31.1.1.1.6",
+        "ifHCOutOctets": "1.3.6.1.2.1.31.1.1.1.10",
+        "ifHighSpeed": "1.3.6.1.2.1.31.1.1.1.15",
     },
 
     # IP MIB (RFC 4293)
@@ -35,8 +41,11 @@ OIDs = {
     "host": {
         "hrProcessorLoad": "1.3.6.1.2.1.25.3.3.1.2",
         "hrMemorySize": "1.3.6.1.2.1.25.2.2.0",
-        "hrStorageUsed": "1.3.6.1.2.1.25.2.3.1.6",
+        "hrStorageType": "1.3.6.1.2.1.25.2.3.1.2",
+        "hrStorageDescr": "1.3.6.1.2.1.25.2.3.1.3",
+        "hrStorageAllocationUnits": "1.3.6.1.2.1.25.2.3.1.4",
         "hrStorageSize": "1.3.6.1.2.1.25.2.3.1.5",
+        "hrStorageUsed": "1.3.6.1.2.1.25.2.3.1.6",
     },
 
     # GPON / ONU - ITU-T G.988 (OMCI MIB) + Huawei Enterprise MIB
@@ -63,8 +72,8 @@ OIDs = {
 # ===== PERFIS DE VENDOR (Descoberta Automática) =====
 # Usado pelo motor de scan (app/discovery.py) para classificar um dispositivo via
 # fingerprint SNMP (sysObjectID/sysDescr) e saber quais grupos de OIDs acima fazem
-# sentido consultar para ele. "oid_groups" também é o seam para um futuro poller
-# real (ainda não implementado — hoje a telemetria pós-descoberta continua mock).
+# sentido consultar para ele. "oid_groups" diz quais grupos o poller SNMP
+# (app/snmp_poller.py) lê de cada dispositivo cadastrado com SNMP.
 VENDOR_PROFILES = {
     "mikrotik": {
         "label": "MikroTik RouterOS",
@@ -93,6 +102,20 @@ VENDOR_PROFILES = {
         "sysobjectid_prefix": "1.3.6.1.4.1.637",
         "sysdescr_keywords": ["nokia", "isam", "7360", "alcatel"],
         "oid_groups": ["system", "gpon"],
+    },
+    "linux_server": {
+        "label": "Servidor Linux (net-snmp)",
+        "device_type": "Server",
+        "sysobjectid_prefix": "1.3.6.1.4.1.8072",
+        "sysdescr_keywords": ["linux"],
+        "oid_groups": ["system", "interfaces", "host"],
+    },
+    "windows_server": {
+        "label": "Servidor Windows",
+        "device_type": "Server",
+        "sysobjectid_prefix": "1.3.6.1.4.1.311",
+        "sysdescr_keywords": ["windows"],
+        "oid_groups": ["system", "interfaces", "host"],
     },
     "generic": {
         "label": "Dispositivo SNMP genérico",

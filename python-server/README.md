@@ -53,11 +53,16 @@ SNMP_TIMEOUT=1.5
 SNMP_RETRIES=0
 SCAN_MAX_WORKERS=40
 SCAN_MAX_HOSTS=1024
+
+SNMP_POLLER_ENABLED=true
+SNMP_POLL_INTERVAL=30
+SNMP_POLL_MAX_WORKERS=20
 ```
 
 - `ONU_HOST`/`ONU_USERNAME`/`ONU_PASSWORD` — acesso ao painel web da ONU real, usados pelo poller do servidor e pelo script `tools/onu_real_test.py`.
 - `ONU_POLLER_*` — integração da ONU real ao Dashboard (ver [ONU real no Dashboard](#onu-real-no-dashboard)). `ONU_POLLER_ENABLED=false` (padrão) mantém o servidor 100% simulado; `ONU_POLLER_ONU_ID` escolhe qual ONU simulada (1–18, `mock_engine.ONU_PROFILES`) passa a receber os valores reais; `ONU_POLLER_INTERVAL` é o intervalo de leitura em segundos.
-- `SNMP_*`/`SCAN_*` — usadas pelo servidor principal na Descoberta Automática (`POST /api/devices/scan`, ver seção abaixo).
+- `SNMP_COMMUNITY`/`SNMP_TIMEOUT`/`SNMP_RETRIES`/`SCAN_*` — usadas pela Descoberta Automática (`POST /api/devices/scan`); `SNMP_COMMUNITY` também é a community padrão de dispositivos cadastrados sem uma.
+- `SNMP_POLLER_*`/`SNMP_POLL_*` — poller SNMP genérico (ver [Poller SNMP genérico](#poller-snmp-genérico)): liga/desliga, intervalo entre ciclos (s) e quantos dispositivos são lidos em paralelo. Timeout/retries vêm de `SNMP_TIMEOUT`/`SNMP_RETRIES`.
 
 `PORT` também pode ser definida (usada só quando o processo é iniciado via `railway.toml`/Nixpacks em produção; localmente, passe `--port` direto para o uvicorn).
 
@@ -75,6 +80,7 @@ python-server/
 │   ├── snapshot_cache.py         # cache de 2s do snapshot (evita recomputar por sub-rota)
 │   ├── oids.py                   # OIDs SNMP + VENDOR_PROFILES (fingerprint de vendor)
 │   ├── discovery.py              # scan real de rede + fingerprint SNMP (Descoberta Automática)
+│   ├── snmp_poller.py            # poller SNMP genérico: system/interfaces/host de dispositivos reais
 │   ├── onu_web_poller.py         # poller da ONU real via painel web (/boaform), thread de fundo
 │   ├── optical_thresholds.py     # limites ópticos por tecnologia PON (GPON, XGS-PON)
 │   ├── formatting.py             # datas pt-BR, uptime
@@ -92,7 +98,7 @@ python-server/
 │       ├── Dockerfile            #   imagem genérica snmpsim-lextudio, dataset via build arg
 │       ├── docker-compose.yml    #   um serviço por dispositivo simulado
 │       ├── datasets/              #   um .snmprec por dispositivo simulado (olt, mikrotik,
-│       │                          #   zte, nokia, onu-generic)
+│       │                          #   zte, nokia, onu-generic, linux-server)
 │       └── run_olt_sim.py        #   alternativa sem Docker (host direto, ver seção abaixo)
 ├── requirements.txt
 └── .env.example
@@ -132,6 +138,9 @@ Todas as respostas seguem o envelope `{"ok": true/false, ...}`. Prefixo `/api`.
 
 **Dispositivos (CRUD)**
 `GET/POST /devices` · `PUT/DELETE /devices/{id}` · `POST /devices/scan` (Descoberta Automática, ver seção abaixo) · `POST /onus`
+
+**Poller SNMP**
+`GET /devices/{id}/snmp` (última leitura completa) · `POST /devices/{id}/snmp/poll` (leitura imediata) · `GET /snmp-poller/status`
 
 **Alertas (persistidos)**
 `GET /alerts/all` · `POST /alerts/add` · `PUT /alerts/{id}/resolve` · `DELETE /alerts/{id}`
@@ -183,9 +192,11 @@ Hosts que respondem SNMP são classificados por vendor (`VENDOR_PROFILES` em `ap
 | Huawei OLT (MA5800) | `1.3.6.1.4.1.2011` | OLT | `system`, `gpon` |
 | ZTE OLT (ZXA10) | `1.3.6.1.4.1.3902` | OLT | `system`, `gpon` |
 | Nokia OLT (7360 FX) | `1.3.6.1.4.1.637` | OLT | `system`, `gpon` |
+| Servidor Linux (net-snmp) | `1.3.6.1.4.1.8072` | Server | `system`, `interfaces`, `host` |
+| Servidor Windows | `1.3.6.1.4.1.311` | Server | `system`, `interfaces`, `host` |
 | não reconhecido | — | Desconhecido | `system` |
 
-`POST /api/devices/scan` é só leitura — "Adicionar" um resultado do scan abre o modal "Novo Dispositivo" pré-preenchido (ver "Como usar (UI)" acima), que por sua vez usa `POST /api/olts`/`POST /api/onus`/`POST /api/devices` conforme o tipo, sem duplicar lógica de criação. A telemetria do dispositivo, depois de adicionado, continua vindo do `mock_engine.py`; ainda não há um poller SNMP real substituindo os valores simulados.
+`POST /api/devices/scan` é só leitura — "Adicionar" um resultado do scan abre o modal "Novo Dispositivo" pré-preenchido (ver "Como usar (UI)" acima), que por sua vez usa `POST /api/olts`/`POST /api/onus`/`POST /api/devices` conforme o tipo, sem duplicar lógica de criação. Com "Monitorar via SNMP" marcado no modal (padrão quando o host respondeu SNMP no scan), o dispositivo passa a ter telemetria real pelo [poller SNMP genérico](#poller-snmp-genérico); os grupos de OID sugeridos pelo `VENDOR_PROFILES` vão junto.
 
 Concorrência: até `SCAN_MAX_WORKERS` hosts em paralelo (`ThreadPoolExecutor`, já que `pysnmp.hlapi` é síncrono), somando os hosts de **todas** as faixas passadas numa mesma chamada; se esse total passar de `SCAN_MAX_HOSTS`, a chamada é rejeitada (HTTP 400) para não travar o processo escaneando um `/8` digitado por engano.
 
@@ -207,6 +218,7 @@ docker compose up -d --build
 | `zte-sim` | `127.0.0.3:161` (loopback extra) | ZTE OLT (ZXA10) |
 | `nokia-sim` | `127.0.0.4:161` (loopback extra) | Nokia OLT (7360 FX) |
 | `onu-generic-sim` | `127.0.0.5:161` (loopback extra) | ONU/ONT OEM genérica (`generic`/"Desconhecido") |
+| `linux-server-sim` | `127.0.0.6:161` (loopback extra) | Servidor Linux net-snmp com interfaces (contadores crescendo ~48/12 Mbps na `eth0`), 4 núcleos de CPU, RAM e discos (`/var` em 93%) — alvo de teste do poller SNMP |
 
 `192.168.100.26` é o IP real da LAN desta máquina (`ipconfig`) — ajuste `OLT_SIM_BIND` pro seu. Os `127.0.0.x` **não precisam de ajuste**: o Windows (e Linux) já responde por todo `127.0.0.0/8`, não só `127.0.0.1`, então qualquer IP nessa faixa funciona em qualquer máquina sem configurar nada (nada de `netsh`/placa extra). Como cada um está num IP diferente, dá pra escanear todos de uma vez — a faixa `127.0.0.0/24` sozinha já cobre `mikrotik-sim`, `zte-sim`, `nokia-sim` e `onu-generic-sim`; o `olt-sim` fica na LAN real (`192.168.100.0/24`). `docker compose down` derruba tudo.
 
@@ -243,6 +255,52 @@ lab-venv\.venv\Scripts\python.exe lab\run_olt_sim.py 192.168.100.26:161   # IP r
 - o indexador (`dbm`) monta a chave de cache concatenando `--data-dir` com `_` no lugar do separador de path; se o argumento vier com `/` (estilo Unix) em vez de `\`, gera um path quebrado no Windows. `run_olt_sim.py` usa `pathlib.Path` pra sempre passar o separador nativo.
 
 `tools/snmp_test.py` (venv **principal**) sempre usa a porta 161 fixa — então para validar suba o simulador já na porta real (`run_olt_sim.py <ip>:161`; portas <1024 não exigem admin no Windows para bind UDP) e rode `python tools/snmp_test.py <ip> public` antes de testar pela UI. O endpoint default `127.0.0.1:1161` só serve para um teste rápido sem precisar de porta 161 livre.
+
+## Poller SNMP genérico
+
+`app/snmp_poller.py` lê telemetria **real** de qualquer equipamento que fale SNMP v2c com os MIBs padrão — servidores Linux/Windows, switches, roteadores, firewalls, storages e a parte de sistema/interfaces de OLTs. Uma thread de fundo (iniciada com o servidor quando `SNMP_POLLER_ENABLED=true`) consulta, a cada `SNMP_POLL_INTERVAL` segundos e em paralelo (`SNMP_POLL_MAX_WORKERS`), todos os dispositivos cadastrados com o campo `snmp`:
+
+| Grupo (`oidGroups`) | Leitura | O que vira |
+|---|---|---|
+| `system` (sempre) | GET `sysDescr`, `sysObjectID`, `sysUpTime`, `sysName`, `sysLocation` | identificação e uptime |
+| `interfaces` | GETBULK `ifTable` + `ifXTable` | status, velocidade, erros e **taxas em Mbps** (diferença dos contadores entre duas leituras; usa contadores de 64 bits quando o agente tem `ifXTable`, trata a volta do contador de 32 bits e ignora a leitura após reboot) |
+| `host` | GETBULK `hrProcessorLoad` + `hrStorageTable` | CPU por núcleo e média, memória (`hrStorageRam`) e discos (`hrStorageFixedDisk`) com % de uso |
+
+Tabelas que o agente não implementa voltam vazias, sem erro (ex: um roteador sem HOST-RESOURCES-MIB só mostra sistema e interfaces).
+
+**Como cadastrar:** Dispositivos → "Novo Dispositivo" → tipo (Servidor, Roteador, Switch, Rádio ou OLT) → **"Monitorar via SNMP"** com community e porta. Ou, pela API, `POST /api/devices` (ou `/api/olts`) com:
+
+```json
+{"name": "srv-app-01", "ip": "10.0.0.20", "type": "Server",
+ "snmp": {"community": "public", "port": 161, "oidGroups": ["system", "interfaces", "host"]}}
+```
+
+**O que aparece:** na tabela de Dispositivos, CPU · memória · maior uso de disco (amarelo ≥ 75%, vermelho ≥ 90%) e tráfego somado; em "Ver Métricas", o detalhe (sistema, CPU por núcleo, memória, cada disco e cada interface); "Testar Conexão" faz uma leitura SNMP imediata (`POST /api/devices/{id}/snmp/poll`). O status online/offline desses dispositivos passa a vir da resposta SNMP: sem resposta, o dispositivo fica offline e é aberto o alerta crítico **"Sem resposta SNMP — <nome>"** (inclusive na primeira tentativa); quando volta a responder, o alerta é resolvido automaticamente — ambos registrados no Histórico.
+
+**Segurança:** a community nunca sai do servidor — `GET /api/devices`, a página Dispositivos e `GET /api/backups` devolvem `"community": "***"`. Um `PUT /api/devices/{id}` com `"community": "***"` mantém a community já cadastrada.
+
+**Limitações atuais:**
+
+- Só **SNMP v2c** (community em texto puro na rede). SNMPv3 (usuário + autenticação + criptografia) é o próximo passo antes de apontar para uma rede corporativa — junto com **login na própria plataforma**, que ainda não existe.
+- Só MIBs padrão: OIDs proprietários (GPON por ONU nas OLTs, Wi-Fi) ainda não são lidos.
+- Resultados em memória (só a última leitura; sem histórico/gráfico de longo prazo) — perdem-se no restart, como o resto do estado.
+- Windows Server: o serviço SNMP é um recurso opcional obsoleto desde o 2012 R2; funciona, mas WMI/WinRM ou um agente costumam ser preferíveis.
+- Os alertas são escritos pela thread do poller no mesmo estado em memória usado pelas rotas, sem lock — aceitável para o protótipo, a revisar quando houver banco de dados.
+
+**Teste rápido com o laboratório:**
+
+```bash
+cd python-server/tools/lab
+docker compose up -d --build linux-server-sim   # servidor Linux simulado em 127.0.0.6
+```
+
+Depois cadastre `127.0.0.6` como Servidor com "Monitorar via SNMP" (ou escaneie `127.0.0.0/24` e clique em "Adicionar"). A partir da 2ª leitura aparecem as taxas (~48 Mbps de entrada e ~12 Mbps de saída na `eth0`). `docker compose stop linux-server-sim` simula a queda (alerta aberto) e `start` a volta (alerta resolvido).
+
+> **Simuladores ativos:** dois simuladores do laboratório continuam ativos — o servidor Linux em `127.0.0.6` e o MikroTik em `127.0.0.2`. Para ver funcionando, cadastre `127.0.0.6` como Servidor com SNMP, ou escaneie `127.0.0.0/24`. Para desligar:
+>
+> ```bash
+> cd python-server/tools/lab && docker compose stop
+> ```
 
 ## ONU real no Dashboard
 
@@ -320,7 +378,7 @@ A página `/analysis` calcula tendências e projeta prazos direto no navegador �
 
 ## Estado e persistência
 
-Não há banco de dados: todo o estado (dispositivos, alertas, histórico, backups, parâmetros de monitoramento, manutenções, configurações) vive em memória no processo e **se perde a cada restart** — mesmo comportamento do protótipo original em Node. A simulação da topologia GPON (`mock_engine.py`) avança em tempo real a cada request (`tick()` baseado no tempo decorrido desde a última chamada), não em um timer fixo de fundo. A única exceção é o poller da ONU real, que roda numa thread própria; mesmo assim, a leitura só é aplicada à ONU mapeada no próximo `tick()`.
+Não há banco de dados: todo o estado (dispositivos, alertas, histórico, backups, parâmetros de monitoramento, manutenções, configurações) vive em memória no processo e **se perde a cada restart** — mesmo comportamento do protótipo original em Node. A simulação da topologia GPON (`mock_engine.py`) avança em tempo real a cada request (`tick()` baseado no tempo decorrido desde a última chamada), não em um timer fixo de fundo. As exceções são os dois pollers, cada um em sua thread: o da ONU real (leitura aplicada à ONU mapeada no próximo `tick()`) e o poller SNMP genérico (resultados guardados no próprio módulo e mesclados aos dispositivos na leitura pela API, via `snmp_poller.public_device()`).
 
 O intervalo de polling do frontend vem de Configurações → Monitoramento (padrão **5 segundos**) e controla a atualização do Dashboard, de Dispositivos e dos SNMP Traps.
 

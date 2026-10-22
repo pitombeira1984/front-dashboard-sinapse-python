@@ -1,10 +1,100 @@
 // ===== DISPOSITIVOS =====
 let _mgmtDevices = [];
+let _scanResults = [];
+
+// ── Telemetria SNMP real (app/snmp_poller.py) ─────────────────────────────────
+// Limites genéricos de uso (%) para CPU/memória/disco de servidores e equipamentos.
+const _usageColor = v => v == null ? 'var(--text-primary)' : v >= 90 ? 'var(--danger-color)' : v >= 75 ? 'var(--warning-color)' : 'var(--success-color)';
+
+function _fmtBytes(n) {
+    if (n == null) return '--';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(i >= 3 ? 1 : 0)} ${units[i]}`;
+}
+
+function _fmtSpeed(bps) {
+    if (!bps) return '--';
+    return bps >= 1e9 ? `${(bps / 1e9).toFixed(bps % 1e9 ? 1 : 0)} Gbps` : `${Math.round(bps / 1e6)} Mbps`;
+}
+
+function _snmpMetricsCell(d) {
+    const s = d.snmpStatus || {};
+    if (s.ok === null) return `<span style="font-size:0.8rem;color:var(--text-muted);"><i class="fas fa-spinner fa-spin" style="margin-right:0.3rem;"></i>Aguardando 1ª leitura SNMP</span>`;
+    if (!s.fresh) return `<div style="color:var(--danger-color);font-size:0.8rem;font-weight:600;">Sem resposta SNMP</div>
+                          <div style="font-size:0.72rem;color:var(--text-muted);">${escHtml(s.error || '')}</div>`;
+    const parts = [];
+    if (d.cpu != null)        parts.push(`CPU <strong style="color:${_usageColor(d.cpu)};">${d.cpu}%</strong>`);
+    if (d.memory != null)     parts.push(`Mem <strong style="color:${_usageColor(d.memory)};">${d.memory}%</strong>`);
+    if (d.diskMaxPct != null) parts.push(`Disco <strong style="color:${_usageColor(d.diskMaxPct)};">${d.diskMaxPct}%</strong>`);
+    const traffic = d.traffic_in != null ? `↓ ${d.traffic_in} · ↑ ${d.traffic_out} Mbps`
+        : d.interfacesTotal ? `${d.interfacesUp}/${d.interfacesTotal} interfaces up` : '';
+    return `<div style="font-size:0.85rem;">${parts.join(' · ') || 'Respondendo SNMP'}</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">${traffic}</div>`;
+}
+
+function _usageBar(label, pct, detail) {
+    return `<div style="margin-bottom:0.6rem;">
+        <div style="display:flex;justify-content:space-between;gap:1rem;font-size:0.8rem;margin-bottom:0.2rem;">
+            <span>${label}</span><span style="color:${_usageColor(pct)};font-weight:600;white-space:nowrap;">${pct ?? '--'}%${detail ? ` <span style="color:var(--text-muted);font-weight:400;">${detail}</span>` : ''}</span>
+        </div>
+        <div style="height:6px;background:var(--bg-elevated);border-radius:3px;">
+            <div style="width:${Math.min(pct || 0, 100)}%;height:100%;background:${_usageColor(pct)};border-radius:3px;"></div>
+        </div>
+    </div>`;
+}
+
+function _renderSnmpDetail(d, result) {
+    if (!result) return `<p style="color:var(--text-secondary);"><i class="fas fa-spinner fa-spin" style="margin-right:0.4rem;"></i>Aguardando a primeira leitura SNMP deste dispositivo.</p>`;
+    const data = result.data || {};
+    const sys = data.system || {}, host = data.host || {}, ifs = data.interfaces || [];
+    const box = (k, v) => `<div style="background:var(--bg-base);padding:0.75rem;border-radius:8px;">
+        <div style="color:var(--text-secondary);font-size:0.75rem;">${k}</div><div style="font-weight:600;word-break:break-word;">${v}</div></div>`;
+    const errorBanner = result.ok ? '' : `<div style="background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.3);color:var(--danger-color);padding:0.6rem 0.8rem;border-radius:6px;font-size:0.85rem;margin-bottom:1rem;">
+        <i class="fas fa-exclamation-triangle" style="margin-right:0.4rem;"></i>Sem resposta na última leitura: ${escHtml(result.error || '')}${data.system ? ' — exibindo a última leitura bem-sucedida.' : ''}</div>`;
+    if (!data.system) return errorBanner;
+
+    const sections = [`
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem;">
+            ${box('Nome (sysName)', escHtml(sys.sysName || '--'))}
+            ${box('Uptime', escHtml(d.uptime || '--'))}
+            ${box('Localização', escHtml(sys.sysLocation || '--'))}
+            ${box('Resposta / leitura', `${data.responseMs ?? '--'} ms · há ${formatDuration(d.snmpStatus?.ageSeconds ?? 0)}`)}
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:1rem;word-break:break-word;">${escHtml(sys.sysDescr || '')}</div>`];
+
+    if (host.cpuPerCore?.length || host.memory?.length || host.disks?.length) {
+        const cores = host.cpuPerCore || [];
+        sections.push(`<h4 style="margin:0.5rem 0 0.75rem;font-size:0.9rem;">Recursos</h4>
+            ${host.cpuAvg != null ? _usageBar(`CPU (média de ${cores.length} núcleo${cores.length > 1 ? 's' : ''})`, host.cpuAvg,
+                `[${cores.map(c => c + '%').join(' ')}]`) : ''}
+            ${(host.memory || []).map(m => _usageBar(`Memória — ${escHtml(m.descr || '')}`, m.usedPct, `${_fmtBytes(m.usedBytes)} de ${_fmtBytes(m.sizeBytes)}`)).join('')}
+            ${(host.disks || []).map(k => _usageBar(`Disco ${escHtml(k.descr || '')}`, k.usedPct, `${_fmtBytes(k.usedBytes)} de ${_fmtBytes(k.sizeBytes)}`)).join('')}`);
+    }
+
+    if (ifs.length) {
+        sections.push(`<h4 style="margin:1rem 0 0.5rem;font-size:0.9rem;">Interfaces</h4>
+            <div class="table-container"><table style="font-size:0.82rem;">
+                <thead><tr><th>Interface</th><th>Status</th><th>Velocidade</th><th>↓ Mbps</th><th>↑ Mbps</th><th>Erros in/out</th></tr></thead>
+                <tbody>${ifs.map(i => `<tr>
+                    <td>${escHtml(i.name || i.descr || i.index)}</td>
+                    <td><span class="badge ${i.status === 'up' ? 'badge-success' : 'badge-critical'}">${escHtml(i.status)}</span></td>
+                    <td>${_fmtSpeed(i.speedBps)}</td>
+                    <td>${i.inMbps ?? '--'}</td>
+                    <td>${i.outMbps ?? '--'}</td>
+                    <td>${i.inErrors ?? '--'} / ${i.outErrors ?? '--'}</td>
+                </tr>`).join('')}</tbody>
+            </table></div>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.4rem;">Taxas calculadas pela diferença dos contadores entre duas leituras — aparecem a partir da 2ª leitura.</div>`);
+    }
+    return errorBanner + sections.join('');
+}
 
 function renderDeviceRows(devices) {
     if (!devices.length) return `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">Nenhum dispositivo encontrado.</td></tr>`;
     return devices.map(d => {
-        const typeBadge = d.type === 'OLT' ? 'badge-warning' : d.type === 'ONU' ? 'badge-success' : d.type === 'Router' ? 'badge-success' : 'badge-critical';
+        const typeBadge = d.type === 'OLT' ? 'badge-warning' : ['ONU', 'Router', 'Server', 'Switch'].includes(d.type) ? 'badge-success' : 'badge-critical';
 
         let ipInfo = `<div style="font-size:0.875rem;">${d.ip || '--'}</div>`;
         if (d.type === 'ONU') {
@@ -19,6 +109,8 @@ function renderDeviceRows(devices) {
             const rxColor = opticalColor('rxPower', d.rxPower, d.ponMode);
             metricsHtml = `<div style="font-weight:600;color:${rxColor};">${d.rxPower != null ? d.rxPower + ' dBm' : '--'}</div>
                            <div style="font-size:0.75rem;color:var(--text-muted);">${d.latency != null ? d.latency + ' ms' : ''}</div>`;
+        } else if (d.snmpStatus) {
+            metricsHtml = _snmpMetricsCell(d);
         } else if (d.type === 'OLT') {
             const cpuColor = (d.cpu ?? 0) > 80 ? 'var(--danger-color)' : (d.cpu ?? 0) > 60 ? 'var(--warning-color)' : 'var(--text-primary)';
             metricsHtml = `<div style="color:${cpuColor};">CPU: ${d.cpu ?? '--'}%</div>
@@ -112,9 +204,14 @@ function editDevice(id) {
     });
 }
 
-function viewDeviceMetrics(id) {
+async function viewDeviceMetrics(id) {
     const d = _findDevice(id);
     if (!d) return;
+    if (d.snmpStatus) {
+        const detail = await API.getDeviceSnmp(id);
+        openModal(`Métricas SNMP — ${d.name}`, _renderSnmpDetail(detail?.device || d, detail?.result), 'Fechar', closeModal);
+        return;
+    }
     let rows;
     if (d.type === 'OLT') {
         rows = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
@@ -144,11 +241,22 @@ function viewDeviceMetrics(id) {
     openModal(`Métricas — ${d.name}`, rows, 'Fechar', closeModal);
 }
 
-function testDevice(id) {
+async function testDevice(id) {
     const btn = event.target.closest('button');
     const original = btn.innerHTML;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     btn.disabled = true;
+    const dev = _findDevice(id);
+    if (dev?.snmpStatus) {
+        // Dispositivo com SNMP: leitura real imediata, fora do ciclo do poller.
+        const res = await API.pollDeviceSnmp(id);
+        btn.innerHTML = original;
+        btn.disabled  = false;
+        if (res?.result?.ok) showToast(`SNMP ${dev.ip}: OK — ${res.result.data.responseMs} ms (${escHtml(res.result.data.system.sysName || dev.name)})`, 'success');
+        else showToast(`SNMP ${dev.ip}: sem resposta — ${escHtml(res?.result?.error || 'erro ao consultar o servidor')}`, 'error');
+        _loadMgmtDevices();
+        return;
+    }
     setTimeout(() => {
         btn.innerHTML = original;
         btn.disabled  = false;
@@ -178,6 +286,7 @@ function renderScanResults(devices, container) {
     if (!container) return;
     const knownIps = _mgmtDevices.map(d => d.ip);
     const fresh    = devices.filter(d => !knownIps.includes(d.ip));
+    _scanResults   = fresh;
 
     if (!fresh.length) {
         container.innerHTML = `<div style="color:var(--text-secondary);font-size:0.875rem;margin-top:1rem;">Nenhum dispositivo novo encontrado na faixa.</div>`;
@@ -190,10 +299,9 @@ function renderScanResults(devices, container) {
                 ${fresh.length} dispositivo(s) encontrado(s)
             </div>
             <div style="display:flex;flex-direction:column;gap:0.5rem;">
-                ${fresh.map(d => {
+                ${fresh.map((d, idx) => {
                     const latency = d.latency_ms != null ? `${d.latency_ms}ms` : '--';
                     const badges  = (d.oid_groups || []).map(g => `<span class="badge badge-secondary" style="font-size:0.65rem;margin-right:0.25rem;">${g}</span>`).join('');
-                    const nameEsc = (d.suggested_name || d.ip).replace(/'/g, "\\'");
                     return `
                     <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg-base);padding:0.75rem 1rem;border-radius:8px;gap:1rem;flex-wrap:wrap;">
                         <div style="display:flex;align-items:center;gap:1rem;">
@@ -201,13 +309,13 @@ function renderScanResults(devices, container) {
                                 <i class="fas fa-circle" style="font-size:0.6rem;"></i>
                             </div>
                             <div>
-                                <div style="font-weight:600;font-size:0.9rem;">${d.ip} <span style="font-weight:400;color:var(--text-secondary);">— ${d.vendor_label}</span></div>
-                                <div style="color:var(--text-secondary);font-size:0.8rem;">${d.sysDescr ? d.sysDescr + ' • ' : ''}${d.device_type} • Latência: ${latency}</div>
+                                <div style="font-weight:600;font-size:0.9rem;">${d.ip} <span style="font-weight:400;color:var(--text-secondary);">— ${escHtml(d.vendor_label)}</span></div>
+                                <div style="color:var(--text-secondary);font-size:0.8rem;">${d.sysDescr ? escHtml(d.sysDescr) + ' • ' : ''}${escHtml(d.device_type)} • Latência: ${latency}</div>
                                 ${badges ? `<div style="margin-top:0.25rem;">${badges}</div>` : ''}
                             </div>
                         </div>
                         <button class="btn btn-secondary" style="font-size:0.8rem;padding:0.35rem 0.75rem;"
-                            onclick="openScannedDeviceModal('${d.ip}','${nameEsc}','${d.device_type}',this)">
+                            onclick="openScannedDeviceModal(${idx},this)">
                             <i class="fas fa-plus"></i> Adicionar
                         </button>
                     </div>`;
@@ -221,14 +329,20 @@ function renderScanResults(devices, container) {
 // rede passa pelo mesmo fluxo (e endpoints /api/olts, /api/onus) de um
 // cadastro manual, em vez de um POST /api/devices genérico que não registra
 // OLTs na topologia do mock_engine.
-function openScannedDeviceModal(ip, name, deviceType, btn) {
-    const modalType = deviceType === 'OLT' ? 'OLT' : deviceType === 'Router' ? 'Router' : 'Switch';
+function openScannedDeviceModal(idx, btn) {
+    const d = _scanResults[idx];
+    if (!d) return;
+    const modalType = ['OLT', 'Router', 'Server'].includes(d.device_type) ? d.device_type : 'Switch';
     openAddDeviceModal(() => {
         _loadMgmtDevices();
         btn.innerHTML = '<i class="fas fa-check"></i> Adicionado';
         btn.disabled  = true;
         btn.style.backgroundColor = 'var(--success-color)';
-    }, { type: modalType, ip, name });
+    }, {
+        type: modalType, ip: d.ip, name: d.suggested_name || d.ip,
+        // Encontrado só por ping (sem SNMP) -> "Monitorar via SNMP" já vem desmarcado.
+        snmp: !!d.sysDescr, oidGroups: d.oid_groups?.length ? d.oid_groups : undefined,
+    });
 }
 
 document.addEventListener('DOMContentLoaded', function () {

@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     scan_max_workers: int = 40
     scan_max_hosts: int = 1024
 
+    snmp_poller_enabled: bool = True
+    snmp_poll_interval: float = 30.0
+    snmp_poll_max_workers: int = 20
+
 
 settings = Settings()
 

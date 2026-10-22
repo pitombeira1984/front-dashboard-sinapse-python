@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 
-from .. import mock_engine, onu_web_poller, optical_thresholds, state
+from .. import mock_engine, onu_web_poller, optical_thresholds, snmp_poller, state
 from ..snapshot_cache import get_cached_snapshot
 
 router = APIRouter()
@@ -62,7 +62,7 @@ def dashboard(request: Request):
 @router.get("/devices")
 def devices_page(request: Request):
     ctx = _base_ctx(request, "devices", "Dispositivos")
-    ctx.update({"devices": state.get_devices()})
+    ctx.update({"devices": [snmp_poller.public_device(d) for d in state.get_devices()]})
     return templates.TemplateResponse(request, "devices.html", ctx)
 
 

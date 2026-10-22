@@ -89,6 +89,8 @@ const API = {
     async getLocalRanges()       { return this._request('/api/devices/scan/local-ranges'); },
     async updateDevice(id, f)    { const r = await this._fetchPut(`/api/devices/${id}`, f); return r?.data ?? null; },
     async deleteDevice(id)       { return this._fetchDelete(`/api/devices/${id}`); },
+    async getDeviceSnmp(id)      { return this._request(`/api/devices/${id}/snmp`); },
+    async pollDeviceSnmp(id)     { const r = await this._fetchPost(`/api/devices/${id}/snmp/poll`, {}); return r?.data ?? null; },
     async addOLT(data)           { const r = await this._fetchPost('/api/olts', data); return r?.data ?? null; },
     async addONU(data)           { const r = await this._fetchPost('/api/onus', data); return r?.data ?? null; },
 

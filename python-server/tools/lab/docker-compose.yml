@@ -69,3 +69,13 @@ services:
         DATASET_DIR: datasets/onu-generic
     ports:
       - "${ONU_GENERIC_SIM_BIND:-127.0.0.5}:161:161/udp"
+
+  # Servidor Linux (net-snmp) com system + interfaces + host (CPU, memória, discos)
+  # — alvo de teste do poller SNMP genérico (app/snmp_poller.py).
+  linux-server-sim:
+    build:
+      context: .
+      args:
+        DATASET_DIR: datasets/linux-server
+    ports:
+      - "${LINUX_SERVER_SIM_BIND:-127.0.0.6}:161:161/udp"

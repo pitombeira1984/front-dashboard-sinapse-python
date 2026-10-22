@@ -242,9 +242,22 @@ function updateDeviceFormFields() {
     const oltSection     = document.getElementById('new-device-olt-fields');
     const onuSection     = document.getElementById('new-device-onu-fields');
     const genericSection = document.getElementById('new-device-generic-fields');
+    const snmpSection    = document.getElementById('new-device-snmp-fields');
     if (oltSection)     oltSection.style.display     = type === 'OLT' ? '' : 'none';
     if (onuSection)     onuSection.style.display     = type === 'ONU' ? '' : 'none';
     if (genericSection) genericSection.style.display = (type !== 'OLT' && type !== 'ONU') ? '' : 'none';
+    // ONUs são lidas via OLT/painel web, não diretamente — sem bloco SNMP para elas.
+    if (snmpSection)    snmpSection.style.display    = type === 'ONU' ? 'none' : '';
+}
+
+// Configuração SNMP do modal "Novo Dispositivo" -> campo `snmp` do POST (app/snmp_poller.py).
+function _readSnmpFields(prefill) {
+    if (!document.getElementById('device-snmp-enabled')?.checked) return undefined;
+    return {
+        community: document.getElementById('device-snmp')?.value?.trim() || 'public',
+        port:      parseInt(document.getElementById('device-snmp-port')?.value || '161', 10),
+        oidGroups: prefill?.oidGroups,
+    };
 }
 
 function openAddDeviceModal(onDone, prefill) {
@@ -256,6 +269,7 @@ function openAddDeviceModal(onDone, prefill) {
             <select class="form-control" id="new-device-type" onchange="updateDeviceFormFields()">
                 ${opt('OLT', 'OLT (GPON/XGS-PON)')}
                 ${opt('ONU', 'ONU (Terminal de Assinante)')}
+                ${opt('Server', 'Servidor')}
                 ${opt('Router', 'Roteador')}
                 ${opt('Switch', 'Switch Gerenciável')}
                 ${opt('Radio', 'Rádio Wireless')}
@@ -343,9 +357,25 @@ function openAddDeviceModal(onDone, prefill) {
                 <label class="form-label">Endereço IP *</label>
                 <input type="text" class="form-control" id="generic-ip" placeholder="Ex: 10.0.1.50" value="${escHtml(type !== 'OLT' && type !== 'ONU' ? (prefill?.ip || '') : '')}">
             </div>
-            <div class="form-group">
-                <label class="form-label">Comunidade SNMP</label>
-                <input type="text" class="form-control" id="device-snmp" value="public">
+        </div>
+
+        <div id="new-device-snmp-fields" style="border-top:1px solid var(--border-color);padding-top:1rem;margin-top:0.5rem;">
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;">
+                <label class="toggle-switch"><input type="checkbox" id="device-snmp-enabled" ${prefill?.snmp === false ? '' : 'checked'}><span class="toggle-slider"></span></label>
+                <div>
+                    <div style="font-weight:600;">Monitorar via SNMP</div>
+                    <div style="color:var(--text-secondary);font-size:0.8rem;">Lê CPU, memória, discos e interfaces reais (SNMP v2c) a cada ciclo do poller</div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Comunidade SNMP</label>
+                    <input type="text" class="form-control" id="device-snmp" value="public" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Porta</label>
+                    <input type="number" class="form-control" id="device-snmp-port" value="161" min="1" max="65535">
+                </div>
             </div>
         </div>
     `, 'Adicionar', async () => {
@@ -359,7 +389,7 @@ function openAddDeviceModal(onDone, prefill) {
             const location = document.getElementById('olt-location')?.value?.trim();
             const capacity = document.getElementById('olt-capacity')?.value;
             if (!ip) { showToast('Preencha o endereço IP da OLT.', 'warning'); return; }
-            await API.addOLT({ name: name || undefined, ip, vendor, model, location, capacity });
+            await API.addOLT({ name: name || undefined, ip, vendor, model, location, capacity, snmp: _readSnmpFields(prefill) });
             showToast('OLT adicionada ao monitoramento!', 'success');
 
         } else if (type === 'ONU') {
@@ -379,7 +409,7 @@ function openAddDeviceModal(onDone, prefill) {
             const name = document.getElementById('generic-name')?.value?.trim();
             const ip   = document.getElementById('generic-ip')?.value?.trim();
             if (!name || !ip) { showToast('Preencha Nome e IP.', 'warning'); return; }
-            await API.addDevice({ name, ip, type });
+            await API.addDevice({ name, ip, type, snmp: _readSnmpFields(prefill) });
             showToast(`"${name}" adicionado com sucesso!`, 'success');
         }
 

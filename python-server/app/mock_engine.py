@@ -474,6 +474,8 @@ def add_olt(data: dict) -> dict:
         "status": "online", "cpu": 0, "memory": 0, "temperature": 0, "onus_active": 0, "onus_total": 0,
         "vendor": olt["vendor"], "location": olt["location"], "firmware": "Unknown", "uptime": "0d 00:00:00",
     }
+    if data.get("snmp"):
+        dev["snmp"] = data["snmp"]  # telemetria real de sistema/interfaces via app/snmp_poller.py
     app_state.appState["devices"].append(dev)
     app_state.add_history({"event": f"OLT Adicionada — {olt_id}", "device": olt_id, "duration": "--",
                             "action": f"IP: {olt['ip']}", "user": "admin", "type": "device"})
