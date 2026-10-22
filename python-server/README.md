@@ -35,6 +35,122 @@ Para simular produção (sem reload):
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
+## Acessando os dispositivos simulados (containers Docker)
+
+Os dispositivos SNMP simulados do laboratório (`tools/lab/`) rodam como **containers** Docker — não são VMs completas: o Docker Desktop mantém uma única VM leve (WSL2) e cada dispositivo é um container dentro dela. Esta seção é o passo a passo operacional; os detalhes de arquitetura (por que cada um publica num IP diferente, como adicionar um novo) estão em [Laboratório: dispositivos SNMP simulados](#laboratório-dispositivos-snmp-simulados-docker).
+
+Todos os comandos abaixo funcionam no **PowerShell** a partir de `python-server/tools/lab` (onde fica o `docker-compose.yml`). Com o `docker compose`, cada container é referenciado pelo **nome do serviço** (coluna "Serviço"); com o `docker` puro, pelo **nome do container** (`lab-<serviço>-1`).
+
+| Serviço | Container | IP:porta (UDP) | Simula |
+|---|---|---|---|
+| `olt-sim` | `lab-olt-sim-1` | `192.168.100.26:161` (IP da LAN — ajuste `OLT_SIM_BIND`) | Huawei OLT MA5800 |
+| `mikrotik-sim` | `lab-mikrotik-sim-1` | `127.0.0.2:161` | MikroTik RouterOS |
+| `zte-sim` | `lab-zte-sim-1` | `127.0.0.3:161` | ZTE OLT ZXA10 |
+| `nokia-sim` | `lab-nokia-sim-1` | `127.0.0.4:161` | Nokia OLT 7360 FX |
+| `onu-generic-sim` | `lab-onu-generic-sim-1` | `127.0.0.5:161` | ONU/ONT OEM genérica |
+| `linux-server-sim` | `lab-linux-server-sim-1` | `127.0.0.6:161` | Servidor Linux (CPU, memória, discos, interfaces) |
+
+Community SNMP de todos: `public`.
+
+### 1. Pré-requisitos
+
+1. **Docker Desktop** instalado e **aberto** (ícone da baleia na bandeja do Windows parado, sem animação = engine pronta).
+2. Confirme que o Docker responde:
+
+   ```powershell
+   docker version          # precisa mostrar as seções "Client" e "Server"
+   ```
+
+   Se aparecer `error during connect` / `The system cannot find the file specified`, o Docker Desktop não está rodando — abra-o e aguarde a engine iniciar.
+3. Entre na pasta do laboratório:
+
+   ```powershell
+   cd "python-server\tools\lab"
+   ```
+
+### 2. Conectar (subir os dispositivos)
+
+```powershell
+# todos os dispositivos (a primeira vez faz o build da imagem — ~1 min)
+docker compose up -d --build
+
+# ou só os que você precisa
+docker compose up -d --build linux-server-sim mikrotik-sim
+```
+
+`-d` roda em segundo plano (o terminal fica livre); `--build` reconstrói a imagem se o `Dockerfile` ou um dataset mudou. Os containers **não sobem sozinhos** ao reiniciar o Windows — depois de um reboot, abra o Docker Desktop e rode o comando de novo.
+
+> **`olt-sim` publica no IP real da LAN** (`192.168.100.26` por padrão). Se a sua máquina tiver outro IP (veja com `ipconfig`), o `up` falha com `cannot assign requested address`. Defina o IP antes de subir: `$env:OLT_SIM_BIND = "<seu IP>"; docker compose up -d --build olt-sim` — ou suba os demais sem ele.
+
+### 3. Verificar se estão no ar
+
+```powershell
+docker compose ps                     # STATUS "Up ..." = rodando
+docker compose ps -a                  # inclui os parados ("Exited")
+docker compose logs -f linux-server-sim   # log ao vivo (Ctrl+C sai do log, o container continua rodando)
+```
+
+Teste SNMP real a partir do host (venv **principal** do `python-server`, não de dentro do container):
+
+```powershell
+cd ..\..                              # volta para python-server
+.venv\Scripts\python.exe tools\snmp_test.py 127.0.0.6 public
+```
+
+### 4. Acessar a plataforma com os dispositivos
+
+1. Com o servidor rodando (ver [Rodando localmente](#rodando-localmente)), abra `http://127.0.0.1:8080/devices`.
+2. Em **Descoberta Automática**, escaneie `127.0.0.0/24` (já vem pré-preenchido) com protocolo **SNMP v2c** — aparecem os simuladores de `127.0.0.2` a `127.0.0.6`. O `olt-sim` está na LAN: inclua `192.168.100.0/24` (ou o seu range) na faixa.
+3. Clique em **Adicionar** no dispositivo desejado e confirme com **"Monitorar via SNMP"** marcado (community `public`, porta `161`).
+4. Em ~30 s (`SNMP_POLL_INTERVAL`) a tabela de Dispositivos mostra CPU/memória/disco/tráfego; "Ver Métricas" abre o detalhe.
+
+### 5. Entrar no terminal de um container
+
+Para inspecionar um dispositivo por dentro (ver/editar o dataset, conferir processos):
+
+```powershell
+docker compose exec linux-server-sim bash
+# equivalente com o docker puro:
+docker exec -it lab-linux-server-sim-1 bash
+```
+
+O prompt muda para `root@<id-do-container>:/#`. Lá dentro:
+
+- `/data/public.snmprec` — o dataset que o simulador está servindo (OID|tipo|valor).
+- `ps aux` — o processo `snmpsim-command-responder` deve estar listado.
+
+Para **sair** do terminal do container, digite `exit` (ou `Ctrl+D`). Isso só fecha o shell — o container **continua rodando**.
+
+Para rodar um único comando sem abrir shell: `docker compose exec linux-server-sim cat /data/public.snmprec`.
+
+> **Git Bash:** use o PowerShell para o `exec -it`. No Git Bash ele falha com `the input device is not a TTY` (prefixe com `winpty`) e converte caminhos como `/data` em `C:/Program Files/Git/data` (use `//data`).
+>
+> **Alterações feitas dentro do container são temporárias** — somem quando o container é recriado (`down`/`up --build`). Para mudar o comportamento de um dispositivo de forma permanente, edite `tools/lab/datasets/<nome>/public.snmprec` no host e rode `docker compose up -d --build <serviço>`.
+
+### 6. Desconectar (parar os dispositivos)
+
+| Objetivo | Comando | Efeito |
+|---|---|---|
+| Pausar um dispositivo (simular queda) | `docker compose stop linux-server-sim` | Para o container; ele deixa de responder SNMP e o SINAPSE abre o alerta **"Sem resposta SNMP"** no próximo ciclo |
+| Religar o mesmo dispositivo | `docker compose start linux-server-sim` | Volta a responder; o alerta é resolvido automaticamente |
+| Reiniciar | `docker compose restart linux-server-sim` | `stop` + `start` |
+| Parar todos (mantendo os containers) | `docker compose stop` | Libera CPU/memória; `docker compose start` religa tudo |
+| Desligar e remover tudo | `docker compose down` | Remove os containers e a rede do laboratório (as imagens ficam em cache, o próximo `up` é rápido) |
+| Remover também as imagens | `docker compose down --rmi local` | Libera disco; o próximo `up --build` refaz o build |
+
+Os dispositivos já cadastrados no SINAPSE **não são removidos** ao parar os containers — eles ficam offline (com alerta) até o container voltar, ou até você excluí-los em `/devices`. Ao terminar os testes, rode `docker compose stop` (ou `down`) para não deixar os simuladores consumindo recursos em segundo plano; fechar o Docker Desktop também para todos.
+
+### 7. Problemas comuns
+
+| Sintoma | Causa / solução |
+|---|---|
+| `docker: error during connect` | Docker Desktop fechado ou ainda iniciando — abra-o e aguarde. |
+| `Bind for 127.0.0.x:161 failed: port is already allocated` | Outro container (de uma execução antiga, ver `docker ps -a`) ou o `run_olt_sim.py` já ocupa esse IP:porta — pare-o (`docker rm -f <container>` ou `Ctrl+C` no script) e suba de novo. |
+| `cannot assign requested address` no `olt-sim` | `OLT_SIM_BIND` não é um IP desta máquina — ver passo 2. |
+| Container em `Exited (255)` | Docker Desktop foi fechado / Windows reiniciou com ele rodando. Basta `docker compose up -d`. |
+| Scan não encontra nada / dispositivo "Sem resposta SNMP" | Confira `docker compose ps` (precisa estar `Up`) e teste com `tools\snmp_test.py <ip> public`; confirme que `SNMP_COMMUNITY=public` no `.env`. |
+| Mudança no dataset não aparece | O dataset é copiado para a imagem no build — rode `docker compose up -d --build <serviço>`. |
+
 ## Variáveis de ambiente
 
 Copie `.env.example` para `.env` e preencha:
